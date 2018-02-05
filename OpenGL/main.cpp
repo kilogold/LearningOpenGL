@@ -130,20 +130,9 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 	}
 
 	glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
+    glEnable(GL_DEPTH_TEST);
 
     float vertices[] = {
-        // positions          // colors           // texture coords
-        0.5f,  0.5f, 0.0f,   1.0f, 0.0f, 0.0f,   1.0f, 1.0f,   // top right
-        0.5f, -0.5f, 0.0f,   0.0f, 1.0f, 0.0f,   1.0f, 0.0f,   // bottom right
-        -0.5f, -0.5f, 0.0f,   0.0f, 0.0f, 1.0f,   0.0f, 0.0f,   // bottom left
-        -0.5f,  0.5f, 0.0f,   1.0f, 1.0f, 0.0f,   0.0f, 1.0f    // top left 
-    };
-    
-    unsigned int elements[] = {  // note that we start from 0!
-        1, 2, 3, 3, 0, 1
-    };
-
-    float vertices_cube[] = {
         -0.5f, -0.5f, -0.5f,  0.0f, 0.0f,
         0.5f, -0.5f, -0.5f,  1.0f, 0.0f,
         0.5f,  0.5f, -0.5f,  1.0f, 1.0f,
@@ -186,42 +175,61 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
         -0.5f,  0.5f,  0.5f,  0.0f, 0.0f,
         -0.5f,  0.5f, -0.5f,  0.0f, 1.0f
     };
-    GLuint VBO_Cube, VAO_Cube;
-    glGenBuffers(1, &VBO_Cube);
-    glGenVertexArrays(1, &VAO_Cube);
-    glBindVertexArray(VAO_Cube);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO_Cube);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+
+	unsigned int elements_quad[] = {  // note that we start from 0!
+		1, 2, 3, 3, 0, 1
+	};
+
+    float vertices_quad[] = {
+        // positions          // colors           // texture coords
+        0.5f,  0.5f, 0.0f,   1.0f, 0.0f, 0.0f,   1.0f, 1.0f,   // top right
+        0.5f, -0.5f, 0.0f,   0.0f, 1.0f, 0.0f,   1.0f, 0.0f,   // bottom right
+        -0.5f, -0.5f, 0.0f,   0.0f, 0.0f, 1.0f,   0.0f, 0.0f,   // bottom left
+        -0.5f,  0.5f, 0.0f,   1.0f, 1.0f, 0.0f,   0.0f, 1.0f    // top left 
+    };
+
+    glm::vec3 cubePositions[] = {
+        glm::vec3(2.0f,  5.0f, -15.0f),
+        glm::vec3(-1.5f, -2.2f, -2.5f),
+        glm::vec3(-3.8f, -2.0f, -12.3f),
+        glm::vec3(2.4f, -0.4f, -3.5f),
+        glm::vec3(-1.7f,  3.0f, -7.5f),
+        glm::vec3(1.3f, -2.0f, -2.5f),
+        glm::vec3(1.5f,  2.0f, -2.5f),
+        glm::vec3(1.5f,  0.2f, -1.5f),
+        glm::vec3(-1.3f,  1.0f, -1.5f)
+    };
+
+    GLuint VBO_quad, VAO_quad, EBO_quad;
+    glGenBuffers(1, &VBO_quad);
+	glGenBuffers(1, &EBO_quad);
+    glGenVertexArrays(1, &VAO_quad);
+    glBindVertexArray(VAO_quad);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO_quad);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices_quad), vertices_quad, GL_STATIC_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO_quad);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(elements_quad), elements_quad, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
     glEnableVertexAttribArray(2);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
-
-
-	GLuint VBO, VAO, EBO;
+    GLuint VBO, VAO;
 	glGenBuffers(1, &VBO);
-	glGenBuffers(1, &EBO);
 	glGenVertexArrays(1, &VAO);
-
 	glBindVertexArray(VAO);
 	glBindBuffer(GL_ARRAY_BUFFER, VBO);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-	
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(elements), elements, GL_STATIC_DRAW);
-
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
-	glEnableVertexAttribArray(0);
-
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    glDisableVertexAttribArray(1);
+    glVertexAttrib3f(1, 1, 1, 1);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(2);
-
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
     
@@ -239,11 +247,11 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 		processInput(window);
 
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        DrawVertices(texture0, texture1, VAO_Cube, 36, window, [shader]() {
+        DrawVertices(texture0, texture1, VAO, 36, window, [&shader]() {
             glm::mat4 model;
-            model = glm::rotate(model, glm::radians(-55.0f), glm::vec3(1.0f, 0.0f, 0.0f)); 
+            model = glm::rotate(model, (float)glfwGetTime() * glm::radians(50.0f), glm::vec3(0.5f, 1.0f, 0.0f));
             shader.setMtx("model", model);
 
             glm::mat4 view;
@@ -257,17 +265,27 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
         });
 
-        DrawElements(texture0, texture1, VAO, window, [shader]() {
+        for (unsigned int i = 0; i < 10; i++)
+        {
+            DrawVertices(texture0, texture1, VAO, 36, window, [&shader, &cubePositions, i]() {
+                glm::mat4 model;
+                model = glm::translate(model, cubePositions[i]);
+                float angle = 20.0f * i;
+                model = glm::rotate(model, glm::radians(angle), glm::vec3(1.0f, 0.3f, 0.5f));
+                shader.setMtx("model", model);
+            });
+        }
+
+        DrawElements(texture0, texture1, VAO_quad, window, [&shader]() {
             glm::mat4 transform;
             transform = glm::scale(transform, glm::vec3(0.5f, 0.5f, 0.5f));
-            transform = glm::translate(transform, glm::vec3(-1.5,1.5,0));
+            transform = glm::translate(transform, glm::vec3(-1.5, 1.5, 0));
             transform = glm::rotate(transform, (float)glfwGetTime(), glm::vec3(0, 0, 1));
-            
+
             shader.setMtx("projection", glm::mat4());
             shader.setMtx("view", glm::mat4());
             shader.setMtx("model", transform);
         });
-
 
         glfwSwapBuffers(window);
 
