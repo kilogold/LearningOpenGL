@@ -34,15 +34,18 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="Main.fs">
+    <None Include="Main.fp">
       <Filter>Resource Files</Filter>
     </None>
-    <None Include="Main.vs">
+    <None Include="Main.vp">
       <Filter>Resource Files</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
     <Image Include="Assets\container.jpg">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Assets\awesomeface.png">
       <Filter>Resource Files</Filter>
     </Image>
   </ItemGroup>

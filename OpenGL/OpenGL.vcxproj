@@ -28,10 +28,11 @@
     <ClInclude Include="stb\stb_image.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Main.fs" />
-    <None Include="Main.vs" />
+    <None Include="Main.fp" />
+    <None Include="Main.vp" />
   </ItemGroup>
   <ItemGroup>
+    <Image Include="Assets\awesomeface.png" />
     <Image Include="Assets\container.jpg" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
