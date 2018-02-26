@@ -242,6 +242,10 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     shader.setInt("tex0", 0);
     shader.setInt("tex1", 1);
 
+    glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 3.0f);
+    glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
+    glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
+
     while (!glfwWindowShouldClose(window))
     {
         processInput(window);
@@ -249,15 +253,29 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        DrawVertices(texture0, texture1, VAO, 36, window, [&shader]() {
+        DrawVertices(texture0, texture1, VAO, 36, window, [&window, &cameraPos, &cameraFront, &cameraUp, &shader]() {
             glm::mat4 model;
             model = glm::rotate(model, (float)glfwGetTime() * glm::radians(50.0f), glm::vec3(0.5f, 1.0f, 0.0f));
             shader.setMtx("model", model);
 
             glm::mat4 view;
-            // note that we're translating the scene in the reverse direction of where we want to move
-            view = glm::translate(view, glm::vec3(0.0f, 0.0f, -3.0f));
+            float cameraSpeed = 0.05f; // adjust accordingly
+            if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+                cameraPos += cameraSpeed * cameraFront;
+            if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+                cameraPos -= cameraSpeed * cameraFront;
+            if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+                cameraPos -= glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed;
+            if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+                cameraPos += glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed;
+
+            view = glm::lookAt(
+                cameraPos, 
+                cameraPos + cameraFront, 
+                cameraUp);
+
             shader.setMtx("view", view);
+
 
             glm::mat4 projection;
             projection = glm::perspective(glm::radians(45.0f), (float)WINDOW_WIDTH / WINDOW_HEIGHT, 0.1f, 100.0f);
