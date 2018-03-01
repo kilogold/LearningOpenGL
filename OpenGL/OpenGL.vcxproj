@@ -29,10 +29,10 @@
     <ClInclude Include="stb\stb_image.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="1.lamp.fs" />
-    <None Include="1.lamp.vs" />
     <None Include="Assets\Shaders\1.colors.fs" />
     <None Include="Assets\Shaders\1.colors.vs" />
+    <None Include="Assets\Shaders\1.lamp.fs" />
+    <None Include="Assets\Shaders\1.lamp.vs" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{47E91669-FCD7-45F7-B90C-6A76463C6529}</ProjectGuid>
