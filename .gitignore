@@ -4,3 +4,5 @@ Debug
 OpenGL/Debug
 OpenGL/glfw-3.2.1.bin.WIN32/docs
 .vs
+OpenGL/OculusSDK/Samples/
+OpenGL/OculusSDK/Tools/

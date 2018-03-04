@@ -14,6 +14,7 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 void processInput(GLFWwindow *window);
+void Draw(Shader& lightingShader, Shader& lampShader, GLuint cubeVAO, GLuint lightVAO);
 
 // settings
 const unsigned int SCR_WIDTH = 800;
@@ -153,66 +154,21 @@ int main()
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
 
-
-    // render loop
+    // game loop
     // -----------
     while (!glfwWindowShouldClose(window))
     {
-        // per-frame time logic
-        // --------------------
-        float currentFrame = static_cast<float>(glfwGetTime());
-        deltaTime = currentFrame - lastFrame;
-        lastFrame = currentFrame;
-
-        // input
-        // -----
-        processInput(window);
-
-        // render
-        // ------
-        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        // be sure to activate shader when setting uniforms/drawing objects
-        lightingShader.use();
-        lightingShader.setVec3("objectColor", 1.0f, 0.5f, 0.31f);
-        lightingShader.setVec3("lightColor", 1.0f, 1.0f, 1.0f);
-        lightPos.x = cos(currentFrame);
-        lightPos.z = sin(currentFrame);
-        lightingShader.setVec3("lightPos", lightPos);
-
-        // view/projection transformations
-        glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
-        glm::mat4 view = camera.GetViewMatrix();
-        lightingShader.setMat4("projection", projection);
-        lightingShader.setMat4("view", view);
-
-        // world transformation
-		glm::mat4 model; 
-        lightingShader.setMat4("model", model);
-
-        // render the cube
-        glBindVertexArray(cubeVAO);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
+		// input
+		// -----
+		processInput(window);
 
 
-        // also draw the lamp object
-        lampShader.use();
-        lampShader.setMat4("projection", projection);
-        lampShader.setMat4("view", view);
-        model = glm::mat4();
-        model = glm::translate(model, lightPos);
-        model = glm::scale(model, glm::vec3(0.2f)); // a smaller cube
-        lampShader.setMat4("model", model);
+		Draw(lightingShader, lampShader, cubeVAO, lightVAO);
 
-        glBindVertexArray(lightVAO);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-
-
-        // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
-        // -------------------------------------------------------------------------------
-        glfwSwapBuffers(window);
-        glfwPollEvents();
+		// glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
+		// -------------------------------------------------------------------------------
+		glfwSwapBuffers(window);
+		glfwPollEvents();
     }
 
     // optional: de-allocate all resources once they've outlived their purpose:
@@ -225,6 +181,56 @@ int main()
     // ------------------------------------------------------------------
     glfwTerminate();
     return 0;
+}
+
+void Draw(Shader& lightingShader, Shader& lampShader, GLuint cubeVAO, GLuint lightVAO)
+{
+	// per-frame time logic
+	// --------------------
+	float currentFrame = static_cast<float>(glfwGetTime());
+	deltaTime = currentFrame - lastFrame;
+	lastFrame = currentFrame;
+
+	// render
+	// ------
+	glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	// be sure to activate shader when setting uniforms/drawing objects
+	lightingShader.use();
+	lightingShader.setVec3("objectColor", 1.0f, 0.5f, 0.31f);
+	lightingShader.setVec3("lightColor", 1.0f, 1.0f, 1.0f);
+	lightPos.x = cos(currentFrame);
+	lightPos.z = sin(currentFrame);
+	lightingShader.setVec3("lightPos", lightPos);
+
+	// view/projection transformations
+	glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
+	glm::mat4 view = camera.GetViewMatrix();
+	lightingShader.setMat4("projection", projection);
+	lightingShader.setMat4("view", view);
+
+	// world transformation
+	glm::mat4 model;
+	lightingShader.setMat4("model", model);
+
+	// render the cube
+	glBindVertexArray(cubeVAO);
+	glDrawArrays(GL_TRIANGLES, 0, 36);
+
+
+	// also draw the lamp object
+	lampShader.use();
+	lampShader.setMat4("projection", projection);
+	lampShader.setMat4("view", view);
+	model = glm::mat4();
+	model = glm::translate(model, lightPos);
+	model = glm::scale(model, glm::vec3(0.2f)); // a smaller cube
+	lampShader.setMat4("model", model);
+
+	glBindVertexArray(lightVAO);
+	glDrawArrays(GL_TRIANGLES, 0, 36);
+
 }
 
 // process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
