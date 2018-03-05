@@ -6,17 +6,15 @@
 // Include the Oculus SDK
 #include "OVR_CAPI_GL.h"
 
-#include "../../OculusRoomTiny_Advanced/Common/Win32_GLAppUtil.h"
-
 #if defined(_WIN32)
 #include <dxgi.h> // for GetDefaultAdapterLuid
 #pragma comment(lib, "dxgi.lib")
 #endif
 
-using namespace OVR;
 
 typedef void* RenderFunc(const float* viewMat3x3, const float* projMat3x3);
-
+struct TextureBuffer;
+struct DepthBuffer;
 class HMD_Framework
 {
 private:
@@ -24,7 +22,7 @@ private:
 	DepthBuffer*		eyeDepthBuffer[2];
 	ovrSizei			mirrorWindowSize;
 	ovrMirrorTexture	mirrorTexture;
-	GLuint				mirrorFBO;
+	unsigned int		mirrorFBO;
 	long long			frameIndex;
 
 	ovrSession session;

@@ -1,5 +1,7 @@
 #include "HMD_Framework.h"
+#include "OculusSDK\Samples\OculusRoomTiny_Advanced\Common\Win32_GLAppUtil.h"
 
+using namespace OVR;
 static ovrGraphicsLuid GetDefaultAdapterLuid()
 {
 	ovrGraphicsLuid luid = ovrGraphicsLuid();
@@ -75,7 +77,6 @@ bool HMD_Framework::Initialize(ovrErrorType& error)
 		return isRunning;
 	}
 
-
 	ovrResult result = ovr_Create(&session, &luid);
 	if (!OVR_SUCCESS(result))
 	{
@@ -92,13 +93,13 @@ bool HMD_Framework::Initialize(ovrErrorType& error)
 
 	// Setup Window and Graphics
 	// Note: the mirror window can be any size, for this sample we use 1/2 the HMD resolution
-	ovrSizei mirrorWindowSize = { hmdDesc.Resolution.w / 2, hmdDesc.Resolution.h / 2 };
-	if (!Platform.InitDevice(mirrorWindowSize.w, mirrorWindowSize.h, reinterpret_cast<LUID*>(&luid)))
-	{
-		Shutdown();
-		isRunning = false;
-		return isRunning;
-	}
+	//ovrSizei mirrorWindowSize = { hmdDesc.Resolution.w / 2, hmdDesc.Resolution.h / 2 };
+	//if (!Platform.InitDevice(mirrorWindowSize.w, mirrorWindowSize.h, reinterpret_cast<LUID*>(&luid)))
+	//{
+	//	Shutdown();
+	//	isRunning = false;
+	//	return isRunning;
+	//}
 
 	// Make eye render buffers
 	for (int eye = 0; eye < 2; ++eye)
