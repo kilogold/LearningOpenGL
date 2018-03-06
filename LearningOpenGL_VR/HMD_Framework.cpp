@@ -8,6 +8,8 @@
 #include "OVR_CAPI_GL.h"
 #include <assert.h>
 
+#include "Game.h"
+
 using namespace OVR;
 #ifndef VALIDATE
 #define VALIDATE(x, msg) if (!(x)) { MessageBoxA(NULL, (msg), "OculusRoomTiny", MB_ICONERROR | MB_OK); exit(-1); }
@@ -193,6 +195,7 @@ struct TextureBuffer
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, dbuffer->texId, 0);
 
         glViewport(0, 0, texSize.w, texSize.h);
+		glClearColor(0.1f, 1.0f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glEnable(GL_FRAMEBUFFER_SRGB);
     }
@@ -281,8 +284,7 @@ bool HMD_Framework::Initialize(ovrErrorType& error)
 	isRunning = true;
 	
 	// Initializes LibOVR, and the Rift
-	ovrInitParams initParams = { ovrInit_RequestVersion | ovrInit_FocusAware, OVR_MINOR_VERSION, NULL, 0, 0 };
-	ovrResult initResult = ovr_Initialize(&initParams);
+	ovrResult initResult = ovr_Initialize(nullptr);
 	if (!OVR_SUCCESS(initResult))
 	{
 		isRunning = false;
@@ -305,7 +307,7 @@ bool HMD_Framework::Initialize(ovrErrorType& error)
 
 	// Setup Window and Graphics
 	// Note: the mirror window can be any size, for this sample we use 1/2 the HMD resolution
-	//ovrSizei mirrorWindowSize = { hmdDesc.Resolution.w / 2, hmdDesc.Resolution.h / 2 };
+	mirrorWindowSize = { hmdDesc.Resolution.w / 2, hmdDesc.Resolution.h / 2 };
 	//if (!Platform.InitDevice(mirrorWindowSize.w, mirrorWindowSize.h, reinterpret_cast<LUID*>(&luid)))
 	//{
 	//	Shutdown();
@@ -333,15 +335,24 @@ bool HMD_Framework::Initialize(ovrErrorType& error)
 	desc.Format = OVR_FORMAT_R8G8B8A8_UNORM_SRGB;
 
 	// Create mirror texture and an FBO used to copy mirror texture to back buffer
-	result = ovr_CreateMirrorTextureWithOptionsGL(session, &desc, &mirrorTexture);
+	result = ovr_CreateMirrorTextureGL(session, &desc, &mirrorTexture);
+
 	if (!OVR_SUCCESS(result))
 	{
+		ovrErrorInfo info;
+		ovr_GetLastErrorInfo(&info);
 		VALIDATE(false, "Failed to create mirror texture.");
 	}
 
 	// Configure the mirror read buffer
 	GLuint texId;
-	ovr_GetMirrorTextureBufferGL(session, mirrorTexture, &texId);
+	result = ovr_GetMirrorTextureBufferGL(session, mirrorTexture, &texId);
+	if (!OVR_SUCCESS(result))
+	{
+		ovrErrorInfo info;
+		ovr_GetLastErrorInfo(&info);
+		VALIDATE(false, "Failed to create mirror texture.");
+	}
 
 	glGenFramebuffers(1, &mirrorFBO);
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, mirrorFBO);
@@ -361,7 +372,7 @@ bool HMD_Framework::Initialize(ovrErrorType& error)
 	return isRunning;
 }
 
-void HMD_Framework::Frame(ovrErrorType& error, RenderFunc sceneRenderFunction)
+void HMD_Framework::Frame(ovrErrorType& error)
 {
 		ovrSessionStatus sessionStatus;
 		ovr_GetSessionStatus(session, &sessionStatus);
@@ -388,11 +399,11 @@ void HMD_Framework::Frame(ovrErrorType& error, RenderFunc sceneRenderFunction)
 
 			// Get eye poses, feeding in correct IPD offset
 			ovrPosef EyeRenderPose[2];
-			ovrPosef HmdToEyePose[2] = { eyeRenderDesc[0].HmdToEyePose,
-				eyeRenderDesc[1].HmdToEyePose };
+			ovrVector3f HmdToEyeOffset[2] = { eyeRenderDesc[0].HmdToEyeOffset,
+															eyeRenderDesc[1].HmdToEyeOffset };
 
 			double sensorSampleTime;    // sensorSampleTime is fed into the layer later
-			ovr_GetEyePoses(session, frameIndex, ovrTrue, HmdToEyePose, EyeRenderPose, &sensorSampleTime);
+			ovr_GetEyePoses(session, frameIndex, ovrTrue, HmdToEyeOffset, EyeRenderPose, &sensorSampleTime);
 
 			// Render Scene to Eye Buffers
 			for (int eye = 0; eye < 2; ++eye)
@@ -411,7 +422,20 @@ void HMD_Framework::Frame(ovrErrorType& error, RenderFunc sceneRenderFunction)
 				Matrix4f proj = ovrMatrix4f_Projection(hmdDesc.DefaultEyeFov[eye], 0.2f, 1000.0f, ovrProjection_None);
 
 				// Render scene (invoke external render function)
-				sceneRenderFunction(0,0);
+				float viewFloats[16];
+				float projFloats[16];
+
+				for (size_t cols = 0; cols < 4; cols++)
+				{
+					for (size_t rows = 0; rows < 4; rows++)
+					{
+						int index = 4 * cols + rows;
+						viewFloats[index] = view.M[rows][cols];
+						projFloats[index] = proj.M[rows][cols];
+					}									
+				}
+				Game::Instance()->DrawVR(viewFloats, projFloats);
+				//sceneRenderFunction(0,0);
 				//roomScene->Render(view, proj);
 
 				// Avoids an error when calling SetAndClearRenderSurface during next iteration.

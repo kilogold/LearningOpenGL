@@ -11,9 +11,6 @@
 #pragma comment(lib, "dxgi.lib")
 #endif
 
-
-
-typedef void* RenderFunc(const float* viewMat3x3, const float* projMat3x3);
 struct TextureBuffer;
 struct DepthBuffer;
 class HMD_Framework
@@ -33,7 +30,7 @@ public:
 	int Main(HINSTANCE hinst);
 	bool Initialize(ovrErrorType& error);
 	void Shutdown();
-	void Frame(ovrErrorType& error, RenderFunc sceneRenderFunction);
+	void Frame(ovrErrorType& error);
 	bool IsRunning() { return isRunning; }
 
 	HMD_Framework();

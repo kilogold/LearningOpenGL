@@ -19,14 +19,22 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Game.cpp" />
     <ClCompile Include="glad\src\glad.c" />
     <ClCompile Include="HMD_Framework.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Camera.h" />
+    <ClInclude Include="Game.h" />
     <ClInclude Include="HMD_Framework.h" />
     <ClInclude Include="Shader.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Assets\Shaders\1.colors.fs" />
+    <None Include="Assets\Shaders\1.colors.vs" />
+    <None Include="Assets\Shaders\1.lamp.fs" />
+    <None Include="Assets\Shaders\1.lamp.vs" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{31692FA3-36CD-4382-843C-2A764D195D9A}</ProjectGuid>
