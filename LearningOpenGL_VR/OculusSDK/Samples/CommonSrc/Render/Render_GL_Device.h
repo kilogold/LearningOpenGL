@@ -244,11 +244,10 @@ public:
     RenderDevice*   Ren;
     ovrTextureSwapChain TextureChain;
     ovrMirrorTexture MirrorTexture;
-    int             Width, Height, Samples;
-    uint64_t        Format;
+    int             Width, Height, Samples, Format;
     GLuint          TexId;
 
-    Texture(ovrSession session, RenderDevice* r, uint64_t fmt, int w, int h, int samples);
+    Texture(ovrSession session, RenderDevice* r, int fmt, int w, int h, int samples);
     ~Texture();
 
     GLuint GetTexId()
@@ -272,7 +271,7 @@ public:
     virtual int GetWidth() const override{ return Width; }
     virtual int GetHeight() const override{ return Height; }
     virtual int GetSamples() const override{ return Samples; }
-    virtual uint64_t GetFormat() const override{ return Format; }
+    virtual int GetFormat() const override{ return Format; }
 
     virtual void SetSampleMode(int);
 
@@ -400,13 +399,13 @@ public:
     virtual void Flush() override;
 
     virtual void Clear(float r = 0, float g = 0, float b = 0, float a = 1, float depth = 1,
-                       bool clearColor = true, bool clearDepth = true, int faceIndex = -1) override;
+                       bool clearColor = true, bool clearDepth = true) override;
 
     virtual void BeginRendering() override;
     virtual void SetDepthMode(bool enable, bool write, CompareFunc func = Compare_Less) override;
     virtual void SetWorldUniforms(const Matrix4f& proj, const Vector4f& globalTint) override;
 
-    virtual Texture* GetDepthBuffer(int w, int h, int ms, TextureFormat depthFormat = Texture_Depth32f) override;
+    Texture* GetDepthBuffer(int w, int h, int ms);
 
     virtual void ResolveMsaa(OVR::Render::Texture* msaaTex, OVR::Render::Texture* outputTex) override;
 
@@ -414,14 +413,11 @@ public:
 
     virtual bool Present(bool withVsync)  override{ OVR_UNUSED(withVsync); return true; };
     virtual void SetRenderTarget(Render::Texture* color,
-                                 Render::Texture* depth = NULL, Render::Texture* stencil = NULL, int faceIndex = -1) override;
+                                 Render::Texture* depth = NULL, Render::Texture* stencil = NULL) override;
 
     virtual void SetLighting(const LightingParams* lt) override;
 
     virtual void Blt(Render::Texture* texture) override;
-    virtual void Blt(Render::Texture* texture, uint32_t topLeftX, uint32_t topLeftY, uint32_t width, uint32_t height) override;
-    virtual void BltToTex(Render::Texture* src, Render::Texture* dest) override;
-    virtual void BltFlipCubemap(Render::Texture* src, Render::Texture* temp) override;
 
     // Overridden to apply proper blend state.
     virtual void FillRect(float left, float top, float right, float bottom, Color c, const Matrix4f* view = NULL) override;
@@ -436,7 +432,7 @@ public:
                                  const Matrix4f& matrix, int offset, int count, PrimitiveType prim = Prim_Triangles) override;
 
     virtual Buffer* CreateBuffer() override;
-    virtual Texture* CreateTexture(uint64_t format, int width, int height, const void* data, int mipcount = 1, ovrResult* error = nullptr) override;
+    virtual Texture* CreateTexture(int format, int width, int height, const void* data, int mipcount = 1, ovrResult* error = nullptr) override;
     virtual ShaderSet* CreateShaderSet() override { return new ShaderSet; }
 
     virtual Fill *GetSimpleFill(int flags = Fill::F_Solid) override;
@@ -445,8 +441,6 @@ public:
     virtual Shader *LoadBuiltinShader(ShaderStage stage, int shader) override;
 
     void SetTexture(Render::ShaderStage, int slot, const Texture* t);
-
-    bool SaveCubemapTexture(Render::Texture* tex, Vector3f transl, const std::string& filePath, std::string* error) override;
 };
 
 

@@ -34,17 +34,6 @@ static const uint32_t OVR_DXT4_MAGIC_NUMBER = 0x34545844; // "DXT4"
 static const uint32_t OVR_DXT5_MAGIC_NUMBER = 0x35545844; // "DXT5"
 static const uint32_t OVR_DX10_MAGIC_NUMBER = 0x30315844; // "DX10" - Means use the extended header
 
-static const uint32_t DDS_Cubemap_PositiveX = 0x00000600;
-static const uint32_t DDS_Cubemap_NegativeX = 0x00000a00;
-static const uint32_t DDS_Cubemap_PositiveY = 0x00001200;
-static const uint32_t DDS_Cubemap_NegativeY = 0x00002200;
-static const uint32_t DDS_Cubemap_PositiveZ = 0x00004200;
-static const uint32_t DDS_Cubemap_NegativeZ = 0x00008200;
-static const uint32_t Texture_DDS_Cubemap_Allfaces = (DDS_Cubemap_PositiveX | DDS_Cubemap_NegativeX |
-                                                      DDS_Cubemap_PositiveY | DDS_Cubemap_NegativeY |
-                                                      DDS_Cubemap_PositiveZ | DDS_Cubemap_NegativeZ);
-static const uint32_t Texture_DDS_Cubemap = 0x00000200; 
-
 struct OVR_DDS_PIXELFORMAT
 {
     uint32_t Size;
@@ -109,7 +98,6 @@ Texture* LoadTextureDDSTopDown(RenderDevice* ren, File* f, int textureLoadFlags)
 {
     bool srgbAware = (textureLoadFlags & TextureLoad_SrgbAware) != 0;
     bool anisotropic = (textureLoadFlags & TextureLoad_Anisotropic) != 0;
-    bool cubemap = (textureLoadFlags & Texture_Cubemap) != 0;
 
     OVR_DDS_HEADER header;
     unsigned char filecode[4];
@@ -125,7 +113,7 @@ Texture* LoadTextureDDSTopDown(RenderDevice* ren, File* f, int textureLoadFlags)
     int width  = header.Width;
     int height = header.Height;
 
-    uint64_t format = Texture_RGBA;
+    int format = Texture_RGBA;
 
     uint32_t mipCount = header.MipMapCount;
     if(mipCount <= 0)
@@ -189,17 +177,6 @@ Texture* LoadTextureDDSTopDown(RenderDevice* ren, File* f, int textureLoadFlags)
     {
         format |= Texture_SwapTextureSetStatic;
     }
-
-	  if (cubemap)
-	  {
-          if (header.Caps2 & Texture_DDS_Cubemap)
-          {
-              if ((header.Caps2 & Texture_DDS_Cubemap_Allfaces) == Texture_DDS_Cubemap_Allfaces)
-              {
-                  format |= Texture_Cubemap;
-              }
-          }
-      }
 
     int            byteLen = f->BytesAvailable();
     unsigned char* bytes   = new unsigned char[byteLen];

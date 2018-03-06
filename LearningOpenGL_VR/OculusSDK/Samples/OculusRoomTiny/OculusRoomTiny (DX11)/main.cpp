@@ -45,7 +45,7 @@ struct OculusTexture
     {
     }
 
-    bool Init(ovrSession session, int sizeW, int sizeH, int sampleCount = 1)
+    bool Init(ovrSession session, int sizeW, int sizeH)
     {
         Session = session;
 
@@ -56,8 +56,8 @@ struct OculusTexture
         desc.Width = sizeW;
         desc.Height = sizeH;
         desc.MipLevels = 1;
-        desc.SampleCount = sampleCount;
-        desc.MiscFlags = ovrTextureMisc_DX_Typeless | ovrTextureMisc_AutoGenerateMips;
+        desc.SampleCount = 1;
+        desc.MiscFlags = ovrTextureMisc_DX_Typeless;
         desc.BindFlags = ovrTextureBind_DX_RenderTarget;
         desc.StaticImage = ovrFalse;
 
@@ -73,8 +73,7 @@ struct OculusTexture
             ovr_GetTextureSwapChainBufferDX(Session, TextureChain, i, IID_PPV_ARGS(&tex));
             D3D11_RENDER_TARGET_VIEW_DESC rtvd = {};
             rtvd.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-            rtvd.ViewDimension = (sampleCount > 1) ? D3D11_RTV_DIMENSION_TEXTURE2DMS
-                                                   : D3D11_RTV_DIMENSION_TEXTURE2D;
+            rtvd.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
             ID3D11RenderTargetView* rtv;
             DIRECTX.Device->CreateRenderTargetView(tex, &rtvd, &rtv);
             TexRtv.push_back(rtv);
@@ -121,7 +120,6 @@ static bool MainLoop(bool retryCreate)
     Camera         * mainCam = nullptr;
     ovrMirrorTextureDesc mirrorDesc = {};
     long long frameIndex = 0;
-    int msaaRate = 4;
 
     ovrSession session;
     ovrGraphicsLuid luid;
@@ -143,12 +141,12 @@ static bool MainLoop(bool retryCreate)
     {
         ovrSizei idealSize = ovr_GetFovTextureSize(session, (ovrEyeType)eye, hmdDesc.DefaultEyeFov[eye], 1.0f);
         pEyeRenderTexture[eye] = new OculusTexture();
-        if (!pEyeRenderTexture[eye]->Init(session, idealSize.w, idealSize.h, msaaRate))
+        if (!pEyeRenderTexture[eye]->Init(session, idealSize.w, idealSize.h))
         {
             if (retryCreate) goto Done;
             FATALERROR("Failed to create eye texture.");
         }
-        pEyeDepthBuffer[eye] = new DepthBuffer(DIRECTX.Device, idealSize.w, idealSize.h, msaaRate);
+        pEyeDepthBuffer[eye] = new DepthBuffer(DIRECTX.Device, idealSize.w, idealSize.h);
         eyeRenderViewport[eye].Pos.x = 0;
         eyeRenderViewport[eye].Pos.y = 0;
         eyeRenderViewport[eye].Size = idealSize;
@@ -163,9 +161,7 @@ static bool MainLoop(bool retryCreate)
     mirrorDesc.Format = OVR_FORMAT_R8G8B8A8_UNORM_SRGB;
     mirrorDesc.Width = DIRECTX.WinSizeW;
     mirrorDesc.Height = DIRECTX.WinSizeH;
-    mirrorDesc.MirrorOptions = ovrMirrorOption_Default;
-    result = ovr_CreateMirrorTextureWithOptionsDX(session, DIRECTX.Device, &mirrorDesc, &mirrorTexture);
-    
+    result = ovr_CreateMirrorTextureDX(session, DIRECTX.Device, &mirrorDesc, &mirrorTexture);
     if (!OVR_SUCCESS(result))
     {
         if (retryCreate) goto Done;
@@ -208,22 +204,21 @@ static bool MainLoop(bool retryCreate)
             if (DIRECTX.Key[VK_RIGHT]) mainCam->Rot = XMQuaternionRotationRollPitchYaw(0, Yaw -= 0.02f, 0);
 
             // Animate the cube
-            static float cubePositionClock = 0;
-            if (!sessionStatus.OverlayPresent) // Pause the application if an overlay is present.
-                roomScene->Models[0]->Pos = XMFLOAT3(9 * sin(cubePositionClock), 3, 9 * cos(cubePositionClock += 0.015f));
-            
-            // Call ovr_GetRenderDesc each frame to get the ovrEyeRenderDesc, as the returned values (e.g. HmdToEyePose) may change at runtime.
+            static float cubeClock = 0;
+            roomScene->Models[0]->Pos = XMFLOAT3(9 * sin(cubeClock), 3, 9 * cos(cubeClock += 0.015f));
+
+            // Call ovr_GetRenderDesc each frame to get the ovrEyeRenderDesc, as the returned values (e.g. HmdToEyeOffset) may change at runtime.
             ovrEyeRenderDesc eyeRenderDesc[2];
             eyeRenderDesc[0] = ovr_GetRenderDesc(session, ovrEye_Left, hmdDesc.DefaultEyeFov[0]);
             eyeRenderDesc[1] = ovr_GetRenderDesc(session, ovrEye_Right, hmdDesc.DefaultEyeFov[1]);
 
             // Get both eye poses simultaneously, with IPD offset already included. 
-            ovrPosef EyeRenderPose[2];
-            ovrPosef HmdToEyePose[2] = { eyeRenderDesc[0].HmdToEyePose,
-                                         eyeRenderDesc[1].HmdToEyePose};
+            ovrPosef         EyeRenderPose[2];
+            ovrVector3f      HmdToEyeOffset[2] = { eyeRenderDesc[0].HmdToEyeOffset,
+                                                   eyeRenderDesc[1].HmdToEyeOffset };
 
             double sensorSampleTime;    // sensorSampleTime is fed into the layer later
-            ovr_GetEyePoses(session, frameIndex, ovrTrue, HmdToEyePose, EyeRenderPose, &sensorSampleTime);
+            ovr_GetEyePoses(session, frameIndex, ovrTrue, HmdToEyeOffset, EyeRenderPose, &sensorSampleTime);
 
             // Render Scene to Eye Buffers
             for (int eye = 0; eye < 2; ++eye)
@@ -280,7 +275,6 @@ static bool MainLoop(bool retryCreate)
         // Render mirror
         ID3D11Texture2D* tex = nullptr;
         ovr_GetMirrorTextureBufferDX(session, mirrorTexture, IID_PPV_ARGS(&tex));
-
         DIRECTX.Context->CopyResource(DIRECTX.BackBuffer, tex);
         tex->Release();
         DIRECTX.SwapChain->Present(0, 0);
@@ -309,8 +303,7 @@ Done:
 int WINAPI WinMain(HINSTANCE hinst, HINSTANCE, LPSTR, int)
 {
     // Initializes LibOVR, and the Rift
-	ovrInitParams initParams = { ovrInit_RequestVersion | ovrInit_FocusAware, OVR_MINOR_VERSION, NULL, 0, 0 };
-	ovrResult result = ovr_Initialize(&initParams);
+    ovrResult result = ovr_Initialize(nullptr);
     VALIDATE(OVR_SUCCESS(result), "Failed to initialize libOVR.");
 
     VALIDATE(DIRECTX.InitWindow(hinst, L"Oculus Room Tiny (DX11)"), "Failed to open window.");

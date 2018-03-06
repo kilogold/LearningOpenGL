@@ -8,11 +8,11 @@
                            eyeRenderDesc[0] = ovr_GetRenderDesc(session, ovrEye_Left, HMDInfo.DefaultEyeFov[0]);                                            \
                            eyeRenderDesc[1] = ovr_GetRenderDesc(session, ovrEye_Right, HMDInfo.DefaultEyeFov[1]);                                           \
 
-#define STAGE4_GetEyePoses ovrPosef EyeRenderPose[2];                                                                                                    \
-                           ovrPosef HmdToEyePose[2] = {eyeRenderDesc[0].HmdToEyePose, eyeRenderDesc[1].HmdToEyePose};                   \
+#define STAGE4_GetEyePoses ovrPosef    EyeRenderPose[2];                                                                                                    \
+                           ovrVector3f HmdToEyeOffset[2] = {eyeRenderDesc[0].HmdToEyeOffset,eyeRenderDesc[1].HmdToEyeOffset};                   \
                            double           ftiming = ovr_GetPredictedDisplayTime(session, 0);                                                              \
                            ovrTrackingState hmdState = ovr_GetTrackingState(session, ftiming, ovrTrue);                                                     \
-                           ovr_CalcEyePoses(hmdState.HeadPose.ThePose, HmdToEyePose, EyeRenderPose);
+                           ovr_CalcEyePoses(hmdState.HeadPose.ThePose, HmdToEyeOffset, EyeRenderPose);
 
 #define STAGE4_GetMatrices XMVECTOR eyeQuat = XMVectorSet(EyeRenderPose[eye].Orientation.x, EyeRenderPose[eye].Orientation.y,								  \
 	                                                      EyeRenderPose[eye].Orientation.z, EyeRenderPose[eye].Orientation.w);								  \

@@ -187,26 +187,26 @@ struct VRLayer
     ovrTrackingState GetEyePoses(ovrPosef * useEyeRenderPose = 0, float * scaleIPD = 0, float * newIPD = 0)
     {
         // Get both eye poses simultaneously, with IPD offset already included. 
-        ovrPosef useHmdToEyePose[2] = { EyeRenderDesc[0].HmdToEyePose,
-                                        EyeRenderDesc[1].HmdToEyePose };
+        ovrVector3f useHmdToEyeOffset[2] = { EyeRenderDesc[0].HmdToEyeOffset,
+                                             EyeRenderDesc[1].HmdToEyeOffset };
 
         // If any values are passed as NULL, then we use the default basic case
         if (!useEyeRenderPose) useEyeRenderPose = EyeRenderPose;
         if (scaleIPD)
         {
-            useHmdToEyePose[0].Position.x *= *scaleIPD;
-            useHmdToEyePose[1].Position.x *= *scaleIPD;
+            useHmdToEyeOffset[0].x *= *scaleIPD;
+            useHmdToEyeOffset[1].x *= *scaleIPD;
         }
         if (newIPD)
         {
-            useHmdToEyePose[0].Position.x = -(*newIPD * 0.5f);
-            useHmdToEyePose[1].Position.x = +(*newIPD * 0.5f);
+            useHmdToEyeOffset[0].x = -(*newIPD * 0.5f);
+            useHmdToEyeOffset[1].x = +(*newIPD * 0.5f);
         }
 
         double ftiming = ovr_GetPredictedDisplayTime(Session, 0);
         ovrTrackingState trackingState = ovr_GetTrackingState(Session, ftiming, ovrTrue);
 
-        ovr_CalcEyePoses(trackingState.HeadPose.ThePose, useHmdToEyePose, useEyeRenderPose);
+        ovr_CalcEyePoses(trackingState.HeadPose.ThePose, useHmdToEyeOffset, useEyeRenderPose);
 
         return(trackingState);
     }
@@ -341,8 +341,7 @@ struct BasicVR
             Layer[i] = nullptr;
 
         // Initializes LibOVR, and the Rift
-		ovrInitParams initParams = { ovrInit_RequestVersion, OVR_MINOR_VERSION, NULL, 0, 0 };
-		ovrResult result = ovr_Initialize(&initParams);
+        ovrResult result = ovr_Initialize(nullptr);
         VALIDATE(OVR_SUCCESS(result), "Failed to initialize libOVR.");
 
         VALIDATE(DIRECTX.InitWindow(hinst, title), "Failed to open window.");
@@ -378,7 +377,7 @@ struct BasicVR
         desc.Format = OVR_FORMAT_R8G8B8A8_UNORM_SRGB;
         desc.Width = int(scaleMirrorW * DIRECTX.WinSizeW);
         desc.Height = int(scaleMirrorH * DIRECTX.WinSizeH);
-        result = ovr_CreateMirrorTextureWithOptionsDX(Session, DIRECTX.Device, &desc, &mirrorTexture);
+        result = ovr_CreateMirrorTextureDX(Session, DIRECTX.Device, &desc, &mirrorTexture);
         if (!OVR_SUCCESS(result))
         {
             if (retryCreate) 

@@ -28,11 +28,6 @@ limitations under the License.
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "d3dcompiler.lib")
 
-#include <string.h>
-#include <iostream>
-#include <fstream>
-#include <direct.h>
-
 #include "Kernel/OVR_Std.h"
 
 #include "Util/Util_Direct3D.h"
@@ -42,8 +37,6 @@ limitations under the License.
 #include "Util/Util_ImageWindow.h"
 
 #include "../Util/Logger.h"
-
-
 
 namespace OVR { namespace Render { namespace D3D11 {
 
@@ -59,23 +52,19 @@ static D3D11_INPUT_ELEMENT_DESC ModelVertexDesc[] =
 };
 
 #pragma region Scene shaders
-
-#define MVP_VARYINGS                 \
-    "struct Varyings\n"                     \
-    "{\n"                                   \
-    "   float4 Position : SV_Position;\n"   \
-    "   float4 Color    : COLOR0;\n"        \
-    "   float2 TexCoord : TEXCOORD0;\n"     \
-    "   float2 TexCoord1 : TEXCOORD1;\n"    \
-    "   float3 Normal   : NORMAL;\n"        \
-    "   float3 VPos     : TEXCOORD4;\n"     \
-    "};\n"
-
 static const char* MVPVertexShaderSrc =
     "float4x4 Proj;\n"
     "float4x4 View;\n"
     "float4 GlobalTint;\n"
-    MVP_VARYINGS
+    "struct Varyings\n"
+    "{\n"
+    "   float4 Position : SV_Position;\n"
+    "   float4 Color    : COLOR0;\n"
+    "   float2 TexCoord : TEXCOORD0;\n"
+    "   float2 TexCoord1 : TEXCOORD1;\n"
+    "   float3 Normal   : NORMAL;\n"
+    "   float3 VPos     : TEXCOORD4;\n"
+    "};\n"
     "void main(in float4 Position : POSITION, in float4 Color : COLOR0, in float2 TexCoord : TEXCOORD0, in float2 TexCoord1 : TEXCOORD1, in float3 Normal : NORMAL,\n"
     "          out Varyings ov)\n"
     "{\n"
@@ -97,140 +86,6 @@ static const char* MVVertexShaderSrc =
     "   oTexCoord1 = TexCoord1;\n"
     "   oColor = Color;\n"
     "   oNormal = mul(View, Normal);\n"
-    "}\n";
-
-#define OCTILINEAR_GS_CALC_VIEWPORT_MASK       \
-    "// This function is taken from Nvidia's DX11 multiprojection SDK.\n" \
-    "// Take three vertex positions in clip space, and calculate the\n" \
-    "// (conservative) mask of viewports the triangle touches\n" \
-    "#define NumViewportsWidth   2\n" \
-    "#define NumViewportsHeight  2\n" \
-    "uint NV_VR_CalculateViewportMask(\n" \
-    "  float4        Position0,\n" \
-    "  float4        Position1,\n" \
-    "  float4        Position2)\n" \
-    "{\n" \
-    "  // Cull triangles entirely behind the near plane or beyond the far plane.\n" \
-    "  // Works for both regular and reverse projections.\n" \
-    "  if (Position0.z < 0 && Position1.z < 0 && Position2.z < 0 ||\n" \
-    "    Position0.z > Position0.w && Position1.z > Position1.w && Position2.z > Position2.w)\n" \
-    "    return 0;\n" \
-    "  // If triangle has any vertices behind the camera, just give up and send it to all viewports.\n" \
-    "  // After culling triangles entirely behind the near plane, this shouldn't be many.\n" \
-    "  if (Position0.w <= 0.0 || Position1.w <= 0.0 || Position2.w <= 0.0)\n" \
-    "    return (1 << (NumViewportsWidth * NumViewportsHeight)) - 1;\n" \
-    "  // Project the vertices onto XY plane - all of them have positive W at this point\n" \
-    "  float2 V0 = Position0.xy / Position0.w;\n" \
-    "  float2 V1 = Position1.xy / Position1.w;\n" \
-    "  float2 V2 = Position2.xy / Position2.w;\n" \
-    "  // Calculate AABB on the XY plane\n" \
-    "  float2 BottomLeft = min(min(V0, V1), V2);\n" \
-    "  float2 TopRight = max(max(V0, V1), V2);\n" \
-    "  // Trivial reject\n" \
-    "  if (any(BottomLeft > 1.0) || any(TopRight < -1.0))\n" \
-    "    return 0;\n" \
-    "  // Now calculate a viewport mask based on which rows and columns does the AABB intersect.\n" \
-    "  // Let the HLSL compiler do most of the bit manipulations.\n" \
-    "  // Same algorithm as the MRS branch, just for 2 columns and 2 rows instead of 3\n" \
-    "  #define LMS_REPL_X(N) ((N) | ((N) << 2))\n" \
-    "  #define LMS_REPL_Y(N) ((N) | ((N) << 1))\n" \
-    "  #define LMS_MASK_X(L,R) LMS_REPL_X(L | (R << 1))\n" \
-    "  #define LMS_MASK_Y(T,B) LMS_REPL_Y(T | (B << 2))\n" \
-    "  uint MaskX = 0;\n" \
-    "  if (BottomLeft.x < NDCSplitsX[0])\n" \
-    "    MaskX = LMS_MASK_X(1, 1);\n" \
-    "  else\n" \
-    "    MaskX = LMS_MASK_X(0, 1);\n" \
-    "  if (TopRight.x < NDCSplitsX[0])\n" \
-    "    MaskX &= LMS_MASK_X(1, 0);\n" \
-    "  uint MaskY = 0;\n" \
-    "  if (BottomLeft.y < NDCSplitsY[1])\n" \
-    "    MaskY = LMS_MASK_Y(1, 1);\n" \
-    "  else\n" \
-    "    MaskY = LMS_MASK_Y(1, 0);\n" \
-    "  if (TopRight.y < NDCSplitsY[1])\n" \
-    "    MaskY &= LMS_MASK_Y(0, 1);\n" \
-    "  return MaskX & MaskY;\n" \
-    "}\n"
-
-// The following constant buffer definition must be kept in-sync with the c++
-// code-local version: OctilinearDataCb.
-#define OCTILINEAR_CONSTANT_BUFFER            \
-    "cbuffer OctilinearData : register(b0)\n" \
-    "{\n"                                     \
-    "  float2 NDCSplitsX;\n"                  \
-    "  float2 NDCSplitsY;\n"                  \
-    "  float WarpLeft;\n"                     \
-    "  float WarpRight;\n"                    \
-    "  float WarpUp;\n"                       \
-    "  float WarpDown;\n"                     \
-    "};\n"
-
-static const char* OctilinearEmulatedGeometryShaderSrc =
-    MVP_VARYINGS
-    OCTILINEAR_CONSTANT_BUFFER
-    OCTILINEAR_GS_CALC_VIEWPORT_MASK
-    "float2 OctilinearGetWarpFactors(uint viewport)\n"
-    "{\n"
-    "  float2 f;\n"
-    "  f.x = ((viewport == 0) || (viewport == 2)) ? -WarpLeft : +WarpRight;\n"
-    "  f.y = ((viewport == 2) || (viewport == 3)) ? -WarpDown : +WarpUp;\n"
-    "  return f;\n"
-    "}\n"
-    "struct GsOutputStruct\n"
-    "{\n"
-    "  Varyings Passthrough;\n"
-    "  uint Viewport : SV_ViewportArrayIndex;\n"
-    "};\n"
-    "[maxvertexcount(3)]\n"
-    "[instance(4)]\n"
-    "void main(\n"
-    "    uint InstanceID : SV_GSInstanceID,\n"
-    "    triangle Varyings Input[3],\n"
-    "    inout TriangleStream<GsOutputStruct> Output)\n"
-    "{\n"
-    "    uint ViewportMask = NV_VR_CalculateViewportMask(\n"
-    "      Input[0].Position,\n"
-    "      Input[1].Position,\n"
-    "      Input[2].Position);\n"
-    "    uint in_viewport = (ViewportMask >> InstanceID) & 1;\n"
-    "    if (in_viewport)\n"
-    "    {\n"
-    "        float2 warpFactors = OctilinearGetWarpFactors(InstanceID);\n"
-    "        GsOutputStruct OutputVertex;\n"
-    "        OutputVertex.Viewport = InstanceID;\n"
-    "        for (int i = 0; i < 3; i++)\n"
-    "        {\n"
-    "            OutputVertex.Passthrough = Input[i];\n"
-    "            float4 pos = OutputVertex.Passthrough.Position;\n"
-    "            pos.w += warpFactors.x * pos.x + warpFactors.y * pos.y;\n"
-    "            OutputVertex.Passthrough.Position = pos;\n"
-    "            Output.Append(OutputVertex);\n"
-    "        }\n"
-    "    }\n"
-    "}\n";
-
-static const char* OctilinearFastGsGeometryShaderSrc =
-    MVP_VARYINGS
-    OCTILINEAR_CONSTANT_BUFFER
-    OCTILINEAR_GS_CALC_VIEWPORT_MASK
-    "struct GsOutputStruct\n"
-    "{\n"
-    "  Varyings Passthrough;\n"
-    "  uint ViewportMask : NV_VIEWPORT_MASK;\n"
-    "};\n"
-    "[maxvertexcount(1)]\n"
-    "void main(\n"
-    "  triangle Varyings Input[3],\n"
-    "  inout TriangleStream<GsOutputStruct> Output)\n"
-    "{\n"
-    "  GsOutputStruct OutputVertex;\n"
-    "  OutputVertex.Passthrough = Input[0];\n"
-    "  OutputVertex.ViewportMask = NV_VR_CalculateViewportMask(\n"
-    "    Input[0].Position,\n"
-    "    Input[1].Position,\n"
-    "    Input[2].Position);\n"
-    "  Output.Append(OutputVertex);\n"
     "}\n";
 
 static const char* SolidPixelShaderSrc =
@@ -275,9 +130,9 @@ static const char* TexturePixelShaderSrc = ///Hmm, seems a somewhat arbitrary (a
     "};\n"
     "float4 main(in Varyings ov) : SV_Target\n"
     "{\n"
-    "     float4 color2 = ov.Color * Texture.Sample(Linear, ov.TexCoord);\n"
+    "	float4 color2 = ov.Color * Texture.Sample(Linear, ov.TexCoord);\n"
     "   if (color2.a <= 0.4)\n"
-    "           discard;\n"
+    "		discard;\n"
     "   return color2;\n"
     "}\n";
 
@@ -318,61 +173,6 @@ static const char* MultiTexturePixelShaderSrc =
     "   color2.rgb *= ov.Color.rgb;\n"
 //    "   color2.rgb = float4(0.006, 0.006, 0.006, 1.0);\n"
     "	return float4(color2.rgb / color2.a, 1);\n"
-    "}\n";
-
-// The following shader has no alpha-testing and will not, for example, render
-// folliage correctly. Only use for testing.
-static const char* MultiTextureHeavyAluEarlyZPixelShaderSrc =
-    "Texture2D Texture[2] : register(t0);\n"
-    "SamplerState Linear[2] : register(s0);\n"
-    "struct Varyings\n"
-    "{\n"
-    "   float4 Position : SV_Position;\n"
-    "   float4 Color    : COLOR0;\n"
-    "   float2 TexCoord : TEXCOORD0;\n"
-    "   float2 TexCoord1 : TEXCOORD1;\n"
-    "};\n"
-    "// See https://www.shadertoy.com/view/XsS3Rm\n"
-    "float2 complexProd( float2 v )\n"
-    "{\n"
-    "  return float2(\n"
-    "    v.x * v.x - v.y * v.y,\n"
-    "    v.x * v.y * 2.0\n"
-    "  );\n"
-    "}\n"
-    "float4 main(in Varyings ov) : SV_Target\n"
-    "{\n"
-    "// Adjust ALU workload using maxIterations.\n"
-    "const int maxIterations = 275;\n"
-    "   float4 color1 = Texture[0].Sample(Linear[0], ov.TexCoord);\n"
-    "   float4 color2 = Texture[1].Sample(Linear[1], ov.TexCoord1);\n"
-    "color2.rgb = sqrt(color2.rgb);\n"
-    "color2.rgb = color2.rgb * lerp(0.2, 1.2, saturate(length(color2.rgb)));\n"
-    "color2 = color1 * color2;\n"
-    "color2.rgb *= ov.Color.rgb;\n"
-    "float4 pixColor = float4(color2.rgb / color2.a, 1);\n"
-    "float2 uv = ov.TexCoord.xy;\n"
-    "uv *= 2.5 / min( 6, 6 );\n"
-    "float2 c = float2( 0.285, 0.01 );\n"
-    "float2 v = uv;\n"
-    "float scale = 0.01;\n"
-    "int count = maxIterations;\n"
-    "for ( int i = 0 ; i < maxIterations; i++ )\n"
-    "{\n"
-      "v = c + complexProd( v );\n"
-      "if ( dot( v, v ) > 3.0 )\n"
-      "{\n"
-        "// Fastest path is to 'break' but we want consistent workload.\n"
-        "count = min(i,count);\n"
-      "}\n"
-    "}\n"
-    "// Clamp spinors that scale too quickly.\n"
-    "const int minIterations = 40;\n"
-    "count = clamp(count - minIterations, 0, maxIterations - minIterations);\n"
-    "float ts =  (float)(count) / (float)(maxIterations - minIterations);\n"
-    "pixColor = (pixColor) * (1.0 - ts) + float4(1,1,1,0.0) * (ts);\n"
-    "pixColor.a = 1;\n"
-    "return pixColor;\n"
     "}\n";
 
 #define LIGHTING_COMMON                 \
@@ -474,7 +274,6 @@ static const char* AlphaPremultTexturePixelShaderSrc =
     "	return finalColor;\n"
     "}\n";
 
-
 #pragma endregion
 
 //----------------------------------------------------------------------------
@@ -490,13 +289,6 @@ static ShaderSource VShaderSrcs[VShader_Count] =
     #define MK_VERTEX_SHADER_NAME(name) { "vs_4_0", name##VertexShaderSrc },
     LIST_VERTEX_SHADERS(MK_VERTEX_SHADER_NAME)
     #undef MK_VERTEX_SHADER_NAME
-};
-
-static ShaderSource GShaderSrcs[VShader_Count] =
-{
-    #define MK_GEOMETRY_SHADER_NAME(name) { "gs_5_0", name##GeometryShaderSrc },
-    LIST_GEOMETRY_SHADERS(MK_GEOMETRY_SHADER_NAME)
-    #undef MK_GEOMETRY_SHADER_NAME
 };
 
 static ShaderSource FShaderSrcs[FShader_Count] =
@@ -671,24 +463,6 @@ RenderDevice::RenderDevice(ovrSession session, const RendererParams& p, HWND win
         }
     }
 
-    for (int i = 0; i < GShader_Count; i++)
-    {
-        OVR_ASSERT(GShaderSrcs[i].SourceStr != NULL);      // You forgot a shader!
-        const char* source      = GShaderSrcs[i].SourceStr;
-        const char* shaderModel = GShaderSrcs[i].ShaderModel;
-
-        GeometryShaders[i] = NULL;
-
-        {
-            ID3D10Blob *pShader = CompileShader(shaderModel, source);
-
-            if (pShader != NULL)
-            {
-                GeometryShaders[i] = *new GeomShader(this, pShader);
-            }
-        }
-    }
-
     for (int i = 0; i < FShader_Count; i++)
     {
         OVR_ASSERT(FShaderSrcs[i].SourceStr != NULL);      // You forgot a shader!
@@ -739,39 +513,25 @@ RenderDevice::RenderDevice(ovrSession session, const RendererParams& p, HWND win
 
     OVR_D3D_CHECK_RET(hr);
 
-    // If more rasterizer permutations are needed use a bitmask and generate
-    // rasterizer state on demand.
     D3D11_RASTERIZER_DESC rs;
     memset(&rs, 0, sizeof(rs));
     rs.AntialiasedLineEnable = false;   // You can't just turn this on - it needs alpha modes etc setting up and doesn't work with Z buffers.
     rs.CullMode = D3D11_CULL_BACK;      // Don't use D3D11_CULL_NONE as it will cause z-fighting on certain double-sided thin meshes (e.g. leaves)
     rs.DepthClipEnable = true;
-    rs.ScissorEnable   = false;
     rs.FillMode = D3D11_FILL_SOLID;
     RasterizerCullBack = NULL;
     hr = Device->CreateRasterizerState(&rs, &RasterizerCullBack.GetRawRef());
     OVR_D3D_CHECK_RET(hr);
-    rs.ScissorEnable = true;
-    hr = Device->CreateRasterizerState(&rs, &RasterizerCullBackScissorEnabled.GetRawRef());
-    OVR_D3D_CHECK_RET(hr);
 
     rs.CullMode = D3D11_CULL_FRONT;
-    rs.ScissorEnable   = false;
     RasterizerCullFront = NULL;
     hr = Device->CreateRasterizerState(&rs, &RasterizerCullFront.GetRawRef());
     OVR_D3D_CHECK_RET(hr);
-    rs.ScissorEnable = true;
-    hr = Device->CreateRasterizerState(&rs, &RasterizerCullFrontScissorEnabled.GetRawRef());
-    OVR_D3D_CHECK_RET(hr);
 
     rs.CullMode = D3D11_CULL_NONE;
-    rs.ScissorEnable   = false;
     RasterizerCullOff = NULL;
     hr = Device->CreateRasterizerState(&rs, &RasterizerCullOff.GetRawRef());
-    OVR_D3D_CHECK_RET(hr);
-    rs.ScissorEnable = true;
-    hr = Device->CreateRasterizerState(&rs, &RasterizerCullOffScissorEnabled.GetRawRef());
-    OVR_D3D_CHECK_RET(hr);
+    OVR_D3D_CHECK_RET(hr);    
 
     QuadVertexBuffer = *CreateBuffer();
     const Render::Vertex QuadVertices[] =
@@ -791,7 +551,6 @@ RenderDevice::RenderDevice(ovrSession session, const RendererParams& p, HWND win
     }
 
     Context->QueryInterface(IID_PPV_ARGS(&UserAnnotation.GetRawRef()));
-
 }
 
 RenderDevice::~RenderDevice()
@@ -850,14 +609,11 @@ bool RenderDevice::RecreateSwapChain()
     {
         SwapChain = NULL;
     }
-    
+
     Ptr<IDXGISwapChain> newSC;
      hr = DXGIFactory->CreateSwapChain(Device, &scDesc, &newSC.GetRawRef());
     OVR_D3D_CHECK_RET_FALSE(hr);
     SwapChain = newSC;
-
-    hr = DXGIFactory->MakeWindowAssociation(Window, DXGI_MWA_NO_ALT_ENTER);
-    OVR_D3D_CHECK_RET_FALSE(hr);
 
     BackBuffer = NULL;
     BackBufferRT = NULL;
@@ -961,10 +717,8 @@ Texture* RenderDevice::GetDepthBuffer(int w, int h, int ms, TextureFormat depthF
 
 void RenderDevice::Clear(float r /*= 0*/, float g /*= 0*/, float b /*= 0*/, float a /*= 1*/,
     float depth /*= 1*/,
-    bool clearColor /*= true*/, bool clearDepth /*= true*/, int faceIndex /*= -1*/)
+    bool clearColor /*= true*/, bool clearDepth /*= true*/)
 {
-    OVR_UNUSED(faceIndex);
-
     if (clearColor)
     {
         const float color[] = { r, g, b, a };
@@ -974,15 +728,7 @@ void RenderDevice::Clear(float r /*= 0*/, float g /*= 0*/, float b /*= 0*/, floa
         }
         else
         {
-            if (faceIndex >= 0)
-            {
-                OVR_ASSERT(CurRenderTarget->GetFormat() & Texture_Cubemap);
-                Context->ClearRenderTargetView(((Texture*)CurRenderTarget)->TexRtv[faceIndex], color);
-            }
-            else
-            {
-                Context->ClearRenderTargetView(CurRenderTarget->GetRtv(), color);
-            }
+            Context->ClearRenderTargetView(CurRenderTarget->GetRtv(), color);
         }
     }
 
@@ -1304,17 +1050,6 @@ Render::Shader *RenderDevice::LoadBuiltinShader(ShaderStage stage, int shader)
     {
     case Shader_Vertex:
         return VertexShaders[shader];
-    case Shader_Geometry:
-        if (shader != GShader_Disabled)
-        {
-            return GeometryShaders[shader];
-        }
-        else
-        {
-            // Disabled shader passed into LoadBuiltinShader.
-            OVR_ASSERT(false);
-            return nullptr;
-        }
     case Shader_Pixel:
         return PixelShaders[shader];
     default:
@@ -1383,7 +1118,7 @@ ID3D11SamplerState* RenderDevice::GetSamplerState(int sm)
     return SamplerStates[sm];
 }
 
-Texture::Texture(ovrSession session, RenderDevice* ren, uint64_t fmt, int w, int h) :
+Texture::Texture(ovrSession session, RenderDevice* ren, int fmt, int w, int h) :
     Session(session),
     Ren(ren),
     TextureChain(NULL),
@@ -1428,12 +1163,6 @@ void Texture::SetSampleMode(int sm)
 
 void Texture::GenerateMips()
 {
-    if (Samples > 1)
-    {
-        OVR_FAIL(); // no MSAA textures should reach this code
-        return;
-    }
-
     if ((Format & Texture_GenMipmaps) == 0)
     {
         OVR_FAIL();
@@ -1470,28 +1199,6 @@ void Texture::Commit()
     }
 }
 
-
-void Texture::Update(void* data, uint32_t height, uint32_t stride)
-{
-    int index = 0;
-
-    if (Format & Texture_SwapTextureSet)
-    {
-        if (!TextureChain)
-        {
-            OVR_FAIL();
-        }
-        else
-        {
-            ovr_GetTextureSwapChainCurrentIndex(Session, TextureChain, &index);
-        }
-    }
-
-    Ptr<ID3D11Resource> resource;
-    TexSv[index]->GetResource(&resource.GetRawRef());
-
-    Ren->Context->UpdateSubresource(resource, 0, nullptr, data, stride, stride * height);
-}
 
 void RenderDevice::SetTexture(Render::ShaderStage stage, int slot, const Texture* t)
 {
@@ -1532,232 +1239,20 @@ void RenderDevice::SetTexture(Render::ShaderStage stage, int slot, const Texture
     }
 }
 
-struct DDS_PixelFormat
-{
-    uint32_t Size;
-    uint32_t Flags;
-    uint32_t FourCC;
-    uint32_t RGBBitCount;
-    uint32_t RBitMask;
-    uint32_t GBitMask;
-    uint32_t BBitMask;
-    uint32_t ABitMask;
-};
-
-struct DDS_Header
-{
-    uint32_t        Size;
-    uint32_t        Flags;
-    uint32_t        Height;
-    uint32_t        Width;
-    uint32_t        PitchOrLinearSize;
-    uint32_t        Depth;
-    uint32_t        MipMapCount;
-    uint32_t        Reserved1[11];
-    DDS_PixelFormat PixelFormat;
-    uint32_t        Caps;
-    uint32_t        Caps2;
-    uint32_t        Caps3;
-    uint32_t        Caps4;
-    uint32_t        Reserved2;
-};
-
-static const uint32_t DDS_Cubemap_PositiveX = 0x00000600;
-static const uint32_t DDS_Cubemap_NegativeX = 0x00000a00;
-static const uint32_t DDS_Cubemap_PositiveY = 0x00001200;
-static const uint32_t DDS_Cubemap_NegativeY = 0x00002200;
-static const uint32_t DDS_Cubemap_PositiveZ = 0x00004200;
-static const uint32_t DDS_Cubemap_NegativeZ = 0x00008200;
-static const uint32_t Texture_DDS_Cubemap_Allfaces = (DDS_Cubemap_PositiveX | DDS_Cubemap_NegativeX |
-                                                      DDS_Cubemap_PositiveY | DDS_Cubemap_NegativeY |
-                                                      DDS_Cubemap_PositiveZ | DDS_Cubemap_NegativeZ);
-static const uint32_t Texture_DDS_Cubemap   = 0x00000200;
-
-static const uint32_t DDSCaps_Complex       = 0x8;
-static const uint32_t DDSCaps_Texture       = 0x1000;
-
-static const uint32_t DDSD_Caps             = 0x1;
-static const uint32_t DDSD_Height           = 0x2;
-static const uint32_t DDSD_Width            = 0x4;
-static const uint32_t DDSD_PixelFormat      = 0x1000;
-static const uint32_t DDS_RGBA              = 0x00000041;
-static const uint32_t DDS_Magic             = 0x20534444;
-
-const DDS_PixelFormat DDSPF_A8B8G8R8 =
-{ sizeof(DDS_PixelFormat), DDS_RGBA, 0, 32, 0x000000ff, 0x0000ff00, 0x00ff0000, 0xff000000 };
-
-bool RenderDevice::SaveCubemapTexture(Render::Texture * tex, Vector3f transl, const std::string& filePath, std::string* error)
-{
-    const int size = tex->GetWidth();
-    const int numFaces = 6;
-    int counter = 0;
-    std::string newFilePath = filePath;
-
-    // Create directory to hold cubemaps - next to the scene assets folder
-    std::string directoryPath = newFilePath + "/../CubemapRenders";
-    const char* charDirectoryPath = directoryPath.c_str();
-    int success = _mkdir(charDirectoryPath);
-    if (success < 0 && errno != EEXIST)
-    {
-        *error = "Directory creation failed.";
-        return false;
-    }
-
-    std::string counterFileName = directoryPath + "/CubemapCounter.txt";
-    // Get current counter value from "CubemapCounter.txt"
-    {
-        std::ifstream inFile;
-        inFile.open(counterFileName);
-
-        if (inFile.is_open())
-        {
-            int in;
-            while (inFile >> in)
-            {
-                counter = in;
-            }
-            if (counter < 0)
-            {
-                counter = 0;
-            }
-            inFile.close();
-        }
-    }
-
-    // Get position value and create file name
-    std::string cubemapRenderFilePath = directoryPath + "/CubemapRender"
-        + std::to_string(counter);
-    for (int i = 0; i < 3; ++i)
-    {
-        double val = round(transl[i] * 1000.0) / 1000.0;
-        std::string strVal = std::to_string(val);
-        strVal.erase(strVal.find_last_not_of('0') + 1, std::string::npos);
-        cubemapRenderFilePath += ("_" + strVal);
-    }
-    cubemapRenderFilePath += ".dds";
-    std::wstring widestr = std::wstring(cubemapRenderFilePath.begin(), cubemapRenderFilePath.end());
-    const wchar_t* path = widestr.c_str();
-
-    // Create file
-    ScopedFileHANDLE ddsFile(CreateFileW(
-        path, FILE_GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr));
-    if (!ddsFile.IsValid()) 
-    {
-        *error = "File creation failed.";
-        return false;
-    }
-
-    DWORD bytesWritten = 0;
-
-    // Create DDS Header
-    {
-        const size_t headerSize = sizeof(uint32_t) + sizeof(DDS_Header);
-        uint8_t fileHeader[headerSize];
-        *reinterpret_cast<uint32_t*>(&fileHeader[0]) = DDS_Magic;
-        auto header = reinterpret_cast<DDS_Header*>(&fileHeader[0] + sizeof(uint32_t));
-        
-        memset(header, 0, sizeof(DDS_Header));
-        
-        header->Size = sizeof(DDS_Header);
-        header->Flags = DDSD_Caps | DDSD_PixelFormat | DDSD_Height | DDSD_Width;
-        header->Width = size;
-        header->Height = size;
-        header->PitchOrLinearSize = 0;
-        header->Depth = 1;
-        header->MipMapCount = 0;
-        for (int i = 0; i < 11; i++)
-        {
-            header->Reserved1[i] = (uint32_t)0;
-        }
-        header->Reserved2 = 0;
-        header->Caps = DDSCaps_Texture | DDSCaps_Complex; // Indicates it is a cubic environment map
-        header->Caps2 = Texture_DDS_Cubemap | Texture_DDS_Cubemap_Allfaces;
-        header->Caps3 = 0;
-        header->Caps4 = 0;
-        header->PixelFormat = DDSPF_A8B8G8R8;
-
-        // Write header to file
-        if (!WriteFile(ddsFile.Get(), fileHeader, static_cast<DWORD>(headerSize), &bytesWritten, nullptr))
-        {
-            *error = "Write file failed.";
-            return false;
-        }
-    }
-
-    // Create textureSource surface to copy back to CPU
-    Ptr<ID3D11Texture2D> texture = ((Texture*)tex)->GetTex();
-    Ptr<ID3D11Texture2D> textureSource;
-    Ptr<ID3D11DeviceContext> deviceContext;
-    Device->GetImmediateContext(&deviceContext.GetRawRef());
-
-    D3D11_TEXTURE2D_DESC textureDesc{};
-    texture->GetDesc(&textureDesc);
-
-    textureDesc.BindFlags = 0;
-    textureDesc.Usage = D3D11_USAGE_STAGING;
-    textureDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-    textureDesc.MiscFlags = 0;
-
-    HRESULT hr = Device->CreateTexture2D(&textureDesc, nullptr, &textureSource.GetRawRef());
-    if (FAILED(hr)) {
-        *error = "Create texture copy failure.";
-        return false;
-    }
-
-    // Copy texture to textureSource
-    deviceContext->CopyResource(textureSource, texture);
-
-    // Grab byte data of cubemap texture
-    D3D11_MAPPED_SUBRESOURCE mapped{};
-    deviceContext->Map(textureSource, 0, D3D11_MAP_READ, 0, &mapped);
-    
-    std::vector<uint32_t> pixels;
-    pixels.resize(size * size * numFaces);
-    memcpy(pixels.data(), mapped.pData, mapped.RowPitch * size * numFaces);
-
-    deviceContext->Unmap(textureSource, 0);
-    
-    // Write each face's data to file
-    const int bpp = 4;
-    int offset = 0;
-    for (int faceIndex = 0; faceIndex < numFaces; ++faceIndex)
-    {
-        if (!WriteFile(ddsFile.Get(), pixels.data() + offset, size * size * bpp, &bytesWritten, nullptr))
-        {
-            *error = "Write file failure.";
-            return false;
-        }
-        offset += size * size;
-    }
-
-    // Update CubemapCounter file with new counter value
-    {
-        std::ofstream outFile;
-        outFile.open(counterFileName, std::ofstream::out | std::ofstream::trunc);
-
-        if (outFile.is_open())
-        {
-            counter++;
-            outFile << counter;
-            outFile.close();
-        }
-    }
-    return true;
-}
-
-std::tuple<unsigned int, const void*> RenderDevice::GenerateSubresourceData(
+void RenderDevice::GenerateSubresourceData(
     unsigned imageWidth, unsigned imageHeight, int format, unsigned imageDimUpperLimit,
     const void* rawBytes, D3D11_SUBRESOURCE_DATA* subresData,
-    unsigned& largestMipWidth, unsigned& largestMipHeight, unsigned& byteSize, unsigned& effectiveMipCount, unsigned subresDataIndex)
+    unsigned& largestMipWidth, unsigned& largestMipHeight, unsigned& byteSize, unsigned& effectiveMipCount)
 {
     largestMipWidth = 0;
     largestMipHeight = 0;
 
     unsigned sliceLen = 0;
     unsigned rowLen = 0;
-	unsigned numRows = 0;
+    unsigned numRows = 0;
     const byte* mipBytes = static_cast<const byte*>(rawBytes);
 
+    unsigned index = 0;
     unsigned subresWidth = imageWidth;
     unsigned subresHeight = imageHeight;
     unsigned numMips = effectiveMipCount;
@@ -1809,12 +1304,12 @@ std::tuple<unsigned int, const void*> RenderDevice::GenerateSubresourceData(
                 largestMipWidth = subresWidth;
                 largestMipHeight = subresHeight;
             }
-			      subresData[subresDataIndex].pSysMem = (const void*)mipBytes;
-			      subresData[subresDataIndex].SysMemPitch = static_cast<UINT>(rowLen);
-			      subresData[subresDataIndex].SysMemSlicePitch = static_cast<UINT>(sliceLen);
-			  
+
+            subresData[index].pSysMem = (const void*)mipBytes;
+            subresData[index].SysMemPitch = static_cast<UINT>(rowLen);
+            subresData[index].SysMemSlicePitch = static_cast<UINT>(sliceLen);
             byteSize += sliceLen;
-			      ++subresDataIndex;
+            ++index;
         }
         else
         {
@@ -1834,7 +1329,6 @@ std::tuple<unsigned int, const void*> RenderDevice::GenerateSubresourceData(
             subresHeight = 1;
         }
     }
-	  return std::make_tuple(subresDataIndex, (const void*)mipBytes);
 }
 
 #define _256Megabytes 268435456
@@ -1857,7 +1351,7 @@ static ovrTextureFormat ConvertOvrFormatToSrgb(ovrTextureFormat format)
     }
 }
 
-Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, const void* data, int mipcount, ovrResult* error)
+Texture* RenderDevice::CreateTexture(int format, int width, int height, const void* data, int mipcount, ovrResult* error)
 {
     HRESULT hr;
 
@@ -1893,7 +1387,6 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
 
     bool isDepth = ((format & Texture_DepthMask) != 0);
     bool isCompressed = false;
-    bool isCubeMap = false;
     TextureFormat textureFormat = (TextureFormat)(format & Texture_TypeMask);
 
     if (((format & Texture_Compressed) != 0) && !(format & Texture_SwapTextureSet || format & Texture_SwapTextureSetStatic))
@@ -1936,7 +1429,7 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
         D3D11_SUBRESOURCE_DATA* subresData = (D3D11_SUBRESOURCE_DATA*)
             OVR_ALLOC(sizeof(D3D11_SUBRESOURCE_DATA) * mipcount);
         GenerateSubresourceData(width, height, convertedFormat, imageDimUpperLimit, data, subresData, largestMipWidth,
-            largestMipHeight, textureSize, effectiveMipCount, 0);
+            largestMipHeight, textureSize, effectiveMipCount);
         TotalTextureMemoryUsage += textureSize;
 
         if (!Device || !subresData)
@@ -1970,7 +1463,7 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
         D3D11_SHADER_RESOURCE_VIEW_DESC SRVDesc;
         memset(&SRVDesc, 0, sizeof(SRVDesc));
         SRVDesc.Format = static_cast<DXGI_FORMAT>(convertedFormat);
-		SRVDesc.ViewDimension = D3D_SRV_DIMENSION_TEXTURE2D;
+        SRVDesc.ViewDimension = D3D_SRV_DIMENSION_TEXTURE2D;
         SRVDesc.Texture2D.MipLevels = desc.MipLevels;
 
         Ptr<ID3D11ShaderResourceView> srv;
@@ -1982,7 +1475,7 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
         NewTex->AddRef();
         return NewTex;
     }
-    else // (((format & Texture_Compressed) != 0) && !(format & Texture_SwapTextureSet || format & Texture_SwapTextureSetStatic))
+    else
     {
         int samples = (format & Texture_SamplesMask);
         if (samples < 1)
@@ -2090,12 +1583,6 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
             d3dformat = DXGI_FORMAT_R16G16B16A16_FLOAT;
             srvFormat = d3dformat;
             break;
-        case Texture_R11G11B10f:
-            bpp = 4;
-            ovrFormat = OVR_FORMAT_R11G11B10_FLOAT;
-            d3dformat = DXGI_FORMAT_R11G11B10_FLOAT;
-            srvFormat = d3dformat;
-            break;
         case Texture_R:
             bpp = 1;
             ovrFormat = OVR_FORMAT_UNKNOWN;
@@ -2144,43 +1631,18 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
         dsDesc.Width = width;
         dsDesc.Height = height;
 
-        if (format & Texture_GenMipmapsBySdk)
-        {
-            OVR_ASSERT((format & Texture_GenMipmaps) == 0);  // incompatible flags, use one or the other
-            mipcount = 1; // ignore mips requested by app
-            dsDesc.MipLevels = 1;
-        }
-        else if (((format & Texture_GenMipmaps) != 0) && !isDepth)
-        {
-            if (samples > 1)
-            {
-                dsDesc.MipLevels = 1; // can't have mips with MSAA textures
-                OVR_FAIL(); // can't have mips with MSAA textures
-            }
-            else
-            {
-                dsDesc.MipLevels = mipcount > 1 ? mipcount : GetNumMipLevels(width, height);
-            }
-        }
+        if (((format & Texture_GenMipmaps) != 0) && !isDepth)
+            dsDesc.MipLevels = mipcount > 1 ? mipcount : GetNumMipLevels(width, height);
         else
-        {
             dsDesc.MipLevels = 1;
-        }
-        
-        if (samples > 1)
-        {
-          OVR_ASSERT(dsDesc.MipLevels == 1);  // can't have mips with MSAA textures
-        }
-
-        bool isDynamic = (format & Texture_CpuDynamic) != 0;
 
         dsDesc.ArraySize = 1;
         dsDesc.Format = d3dformat;
         dsDesc.SampleDesc.Count = samples;
         dsDesc.SampleDesc.Quality = 0;
-        dsDesc.Usage = isDynamic ? D3D11_USAGE_DYNAMIC : D3D11_USAGE_DEFAULT;
+        dsDesc.Usage = D3D11_USAGE_DEFAULT;
         dsDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-        dsDesc.CPUAccessFlags = isDynamic ? D3D11_CPU_ACCESS_WRITE : 0;
+        dsDesc.CPUAccessFlags = 0;
         dsDesc.MiscFlags = 0;
         
         if (isDepth)
@@ -2213,9 +1675,7 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
             if (reinterpretSrgbAsLinear)
                 desc.MiscFlags = ovrTextureMisc_DX_Typeless;
 
-            desc.MirrorOptions = ConvertFormatToMirrorOptions(format);
-            ovrResult result = ovr_CreateMirrorTextureWithOptionsDX(Session, pDXGIDevice, &desc, &NewTex->MirrorTex);
-
+            ovrResult result = ovr_CreateMirrorTextureDX(Session, pDXGIDevice, &desc, &NewTex->MirrorTex);
             if (error != nullptr)
                 *error = result;
 
@@ -2234,7 +1694,7 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
                 D3D11_SHADER_RESOURCE_VIEW_DESC srvd = {};
                 srvd.Format = dsDesc.Format;
                 srvd.ViewDimension = dsDesc.SampleDesc.Count > 1 ? D3D11_SRV_DIMENSION_TEXTURE2DMS : D3D11_SRV_DIMENSION_TEXTURE2D;
-				srvd.Texture2D.MostDetailedMip = 0;
+                srvd.Texture2D.MostDetailedMip = 0;
                 srvd.Texture2D.MipLevels = dsDesc.MipLevels;
 
                 Ptr<ID3D11ShaderResourceView> srv;
@@ -2271,14 +1731,6 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
             // as if they're sRGB even if we are sending in linear formatted textures
             desc.Format = ConvertOvrFormatToSrgb(ovrFormat);
 
-            if (format & Texture_Cubemap)
-            {
-                desc.ArraySize = 6;
-                desc.Type = ovrTexture_Cube;
-                desc.MipLevels = mipcount;
-                isCubeMap = true;
-            }
-
             if (dsDesc.BindFlags & D3D11_BIND_RENDER_TARGET)
             {
                 desc.BindFlags |= ovrTextureBind_DX_RenderTarget;
@@ -2287,6 +1739,9 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
             {
                 desc.BindFlags |= ovrTextureBind_DX_DepthStencil;
             }
+
+            // Can do this with rendertargets, depth buffers, or normal textures, but *not* MSAA color swap buffers.
+            OVR_ASSERT((samples == 1) || isDepth);
 
             // Create typeless when we are rendering as non-sRGB since we will override the texture format in the RTV
             // Make sure new format is different than old format, otherwise we don't have an alternate sRGB format to use
@@ -2298,10 +1753,6 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
             {
                 desc.MiscFlags |= ovrTextureMisc_AllowGenerateMips;
                 desc.BindFlags |= ovrTextureBind_DX_RenderTarget;   // ovrTextureMisc_AllowGenerateMips requires ovrTextureBind_DX_RenderTarget
-            }
-            if ((format & Texture_GenMipmapsBySdk) > 0 && !isCompressed)
-            {
-              desc.MiscFlags |= ovrTextureMisc_AutoGenerateMips;
             }
             if ((format & Texture_Hdcp) > 0)
             {
@@ -2358,8 +1809,8 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
 
                     default:    OVR_ASSERT(false);      depthSrv.Format = DXGI_FORMAT_R32_FLOAT;
                     }
-					          depthSrv.ViewDimension = samples > 1 ? D3D11_SRV_DIMENSION_TEXTURE2DMS : D3D11_SRV_DIMENSION_TEXTURE2D;
-					          depthSrv.Texture2D.MostDetailedMip = 0;
+                    depthSrv.ViewDimension = samples > 1 ? D3D11_SRV_DIMENSION_TEXTURE2DMS : D3D11_SRV_DIMENSION_TEXTURE2D;
+                    depthSrv.Texture2D.MostDetailedMip = 0;
                     depthSrv.Texture2D.MipLevels = dsDesc.MipLevels;
 
                     hr = Device->CreateShaderResourceView(tex, &depthSrv, &srv.GetRawRef());
@@ -2369,19 +1820,9 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
                 {
                     D3D11_SHADER_RESOURCE_VIEW_DESC srvd = {};
                     srvd.Format = dsDesc.Format;
-
-                    if (isCubeMap)
-                    {
-                        srvd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURECUBE;
-                        srvd.TextureCube.MostDetailedMip = 0;
-                        srvd.TextureCube.MipLevels = dsDesc.MipLevels;
-                    }
-                    else
-                    {
-                        srvd.ViewDimension = samples > 1 ? D3D11_SRV_DIMENSION_TEXTURE2DMS : D3D11_SRV_DIMENSION_TEXTURE2D;
-                        srvd.Texture2D.MostDetailedMip = 0;
-                        srvd.Texture2D.MipLevels = dsDesc.MipLevels;
-                    }
+                    srvd.ViewDimension = samples > 1 ? D3D11_SRV_DIMENSION_TEXTURE2DMS : D3D11_SRV_DIMENSION_TEXTURE2D;
+                    srvd.Texture2D.MostDetailedMip = 0;
+                    srvd.Texture2D.MipLevels = dsDesc.MipLevels;
 
                     hr = Device->CreateShaderResourceView(tex, &srvd, &srv.GetRawRef());
                     OVR_D3D_CHECK_RET_NULL(hr);
@@ -2389,6 +1830,7 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
 
                 NewTex->TexSv.push_back(srv);
             }
+
             if (data)
             {
                 if (isCompressed)
@@ -2422,48 +1864,26 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
                     {
                         OVR_ASSERT(false);  return NULL;
                     }
-     
+
                     unsigned largestMipWidth = 0;
                     unsigned largestMipHeight = 0;
                     unsigned effectiveMipCount = mipcount;
                     unsigned textureSize = 0;
-     
-     
-                    D3D11_SUBRESOURCE_DATA* subresData;
-                    int numFaces = 1;
-                    std::tuple<unsigned int, const void*> dataInfo = std::make_tuple(0, data);
-                    if (isCubeMap)
+
+
+                    D3D11_SUBRESOURCE_DATA* subresData = (D3D11_SUBRESOURCE_DATA*)
+                        OVR_ALLOC(sizeof(D3D11_SUBRESOURCE_DATA) * mipcount);
+                    GenerateSubresourceData(width, height, convertedFormat, imageDimUpperLimit, data, subresData, largestMipWidth,
+                        largestMipHeight, textureSize, effectiveMipCount);
+
+                    for (int i = 0; i < mipcount; ++i)
                     {
-                        subresData = (D3D11_SUBRESOURCE_DATA*) OVR_ALLOC(sizeof(D3D11_SUBRESOURCE_DATA) * mipcount * 6);
-                        numFaces = 6;
-                    }
-                    else
-                    {
-                        subresData = (D3D11_SUBRESOURCE_DATA*)OVR_ALLOC(sizeof(D3D11_SUBRESOURCE_DATA) * mipcount);
-                    }
-     
-                    for (int currFace = 0; currFace < numFaces; ++currFace)
-                    {
-                        dataInfo = GenerateSubresourceData(width, height, convertedFormat, imageDimUpperLimit, std::get<1>(dataInfo), subresData, largestMipWidth,
-     							                                             largestMipHeight, textureSize, effectiveMipCount, std::get<0>(dataInfo));
-                        for (int currMip = mipcount * currFace; currMip < mipcount + (mipcount * currFace); ++currMip)
-                        {
-                            UINT subresource = D3D11CalcSubresource(currMip - (mipcount * currFace), currFace, mipcount);
-                            Context->UpdateSubresource(tex, subresource, NULL, subresData[currMip].pSysMem, subresData[currMip].SysMemPitch, subresData[currMip].SysMemSlicePitch);
-                        }
+                        Context->UpdateSubresource(tex, i, NULL, subresData[i].pSysMem, subresData[i].SysMemPitch, subresData[i].SysMemSlicePitch);
                     }
                 }
                 else
                 {
-                    int numFaces = isCubeMap ? 6 : 1;
-
-                    const byte* byteData = static_cast<const byte*>(data);
-                    for (int i = 0; i < numFaces; ++i)
-                    {
-                        Context->UpdateSubresource(tex, i, NULL, (const void*)byteData, width * bpp, width * height * bpp);
-                        byteData += (width * height * bpp);
-                    }
-                  
+                    Context->UpdateSubresource(tex, 0, NULL, data, width * bpp, width * height * bpp);
                     if (format & Texture_GenMipmaps)
                     {
                         // TODO: Just call GenerateMips() instead
@@ -2535,36 +1955,17 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
                 {
                     D3D11_RENDER_TARGET_VIEW_DESC rtvd = {};
                     rtvd.Format = dsDesc.Format;
-                    int numFaces = 1;
+                    rtvd.Texture2D.MipSlice = 0;
+                    rtvd.ViewDimension = dsDesc.SampleDesc.Count > 1 ? D3D11_RTV_DIMENSION_TEXTURE2DMS : D3D11_RTV_DIMENSION_TEXTURE2D;
 
-                    if (isCubeMap)
-                    {
-                        rtvd.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2DARRAY;
-                        rtvd.Texture2DArray.MipSlice = 0;
-                        rtvd.Texture2DArray.ArraySize = 1;
-                        numFaces = 6;
-                    }
-                    else
-                    {
-                        rtvd.ViewDimension = dsDesc.SampleDesc.Count > 1 ? D3D11_RTV_DIMENSION_TEXTURE2DMS : D3D11_RTV_DIMENSION_TEXTURE2D;
-                        rtvd.Texture2D.MipSlice = 0;
-                    }
-
-                    for (int faceIndex = 0; faceIndex < numFaces; ++faceIndex)
-                    {
-                        if(isCubeMap)
-                        {
-                            rtvd.Texture2DArray.FirstArraySlice = faceIndex;
-                        }
-
-                        Ptr<ID3D11RenderTargetView> rtv;
-                        hr = Device->CreateRenderTargetView(tex, &rtvd, &rtv.GetRawRef());
-                        OVR_D3D_CHECK_RET_NULL(hr);
-                        NewTex->TexRtv.push_back(rtv);
-                    }
+                    Ptr<ID3D11RenderTargetView> rtv;
+                    hr = Device->CreateRenderTargetView(tex, &rtvd, &rtv.GetRawRef());
+                    OVR_D3D_CHECK_RET_NULL(hr);
+                    NewTex->TexRtv.push_back(rtv);
                 }
             }
         }
+
         NewTex->AddRef();
         return NewTex;
     }
@@ -2574,7 +1975,7 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
 
 void RenderDevice::ResolveMsaa(OVR::Render::Texture* msaaTex, OVR::Render::Texture* outputTex)
 {
-    uint64_t format = ((Texture*)msaaTex)->Format;
+    int format = ((Texture*)msaaTex)->Format;
     OVR_ASSERT_M(!(format & Texture_DepthMask), "Resolving depth buffers not supported.");
 
     TextureFormat textureFormat = (TextureFormat)(format & Texture_TypeMask);
@@ -2589,17 +1990,10 @@ void RenderDevice::ResolveMsaa(OVR::Render::Texture* msaaTex, OVR::Render::Textu
     case Texture_BGRA8:     resolveFormat = format & Texture_SRGB ? DXGI_FORMAT_B8G8R8A8_UNORM_SRGB : DXGI_FORMAT_B8G8R8A8_UNORM; break;
     case Texture_BGRX:      resolveFormat = format & Texture_SRGB ? DXGI_FORMAT_B8G8R8X8_UNORM_SRGB : DXGI_FORMAT_B8G8R8X8_UNORM; break;
     case Texture_RGBA16f:   resolveFormat = DXGI_FORMAT_R16G16B16A16_FLOAT; break;
-    case Texture_R11G11B10f: resolveFormat = DXGI_FORMAT_R11G11B10_FLOAT; break;
     default:    OVR_FAIL(); break;
     }
 
     Context->ResolveSubresource(((Texture*)outputTex)->GetTex(), 0, ((Texture*)msaaTex)->GetTex(), 0, resolveFormat);
-}
-
-void RenderDevice::EnableScissor(bool enabled)
-{
-    ScissorEnabled = enabled;
-    SetCullMode(ActiveCullMode);
 }
 
 void RenderDevice::SetCullMode(CullMode cullMode)
@@ -2607,39 +2001,27 @@ void RenderDevice::SetCullMode(CullMode cullMode)
     switch (cullMode)
     {
     case OVR::Render::RenderDevice::Cull_Off:
-        if (ScissorEnabled) Context->RSSetState(RasterizerCullOffScissorEnabled);
-        else                Context->RSSetState(RasterizerCullOff);
+        Context->RSSetState(RasterizerCullOff);
         break;
     case OVR::Render::RenderDevice::Cull_Back:
-        if (ScissorEnabled) Context->RSSetState(RasterizerCullBackScissorEnabled);
-        else                Context->RSSetState(RasterizerCullBack);
+        Context->RSSetState(RasterizerCullBack);
         break;
     case OVR::Render::RenderDevice::Cull_Front:
-        if (ScissorEnabled) Context->RSSetState(RasterizerCullFrontScissorEnabled);
-        else                Context->RSSetState(RasterizerCullFront);
+        Context->RSSetState(RasterizerCullFront);
         break;
     default:
         break;
     }
-
-    ActiveCullMode = cullMode;
 }
 
 void RenderDevice::BeginRendering()
 {
-    SetCullMode(RenderDevice::Cull_Back);
+    Context->RSSetState(RasterizerCullBack);
 }
 
-void RenderDevice::SetRenderTarget(Render::Texture* color, Render::Texture* depth, Render::Texture* stencil, int faceIndex)
+void RenderDevice::SetRenderTarget(Render::Texture* color, Render::Texture* depth, Render::Texture* stencil)
 {
     OVR_UNUSED(stencil);
-    OVR_UNUSED(faceIndex);
-
-    bool isCubemap = false;
-    if (faceIndex >= 0 && (CurRenderTarget->GetFormat() & Texture_Cubemap))
-    {
-        isCubemap = true;
-    }
 
     CurRenderTarget = (Texture*)color;
     if (color == NULL)
@@ -2660,24 +2042,16 @@ void RenderDevice::SetRenderTarget(Render::Texture* color, Render::Texture* dept
     {
         depth = GetDepthBuffer(color->GetWidth(), color->GetHeight(), CurRenderTarget->Samples, Texture_Depth32f);
     }
-    
+
     ID3D11ShaderResourceView* sv[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
     if (MaxTextureSet[Shader_Fragment])
     {
         Context->PSSetShaderResources(0, MaxTextureSet[Shader_Fragment], sv);
     }
     memset(MaxTextureSet, 0, sizeof(MaxTextureSet));
-    
+
     CurDepthBuffer = (Texture*)depth;
-    if (isCubemap)
-    {
-        ID3D11RenderTargetView* currRTV = ((Texture*)color)->TexRtv[faceIndex].GetPtr();
-        Context->OMSetRenderTargets(1, &currRTV, ((Texture*)depth)->GetDsv());
-    }
-    else
-    {
-        Context->OMSetRenderTargets(1, &((Texture*)color)->GetRtv().GetRawRef(), ((Texture*)depth)->GetDsv());
-    }
+    Context->OMSetRenderTargets(1, &((Texture*)color)->GetRtv().GetRawRef(), ((Texture*)depth)->GetDsv());
 }
 
 void RenderDevice::SetWorldUniforms(const Matrix4f& proj, const Vector4f& globalTint)
@@ -2689,26 +2063,8 @@ void RenderDevice::SetWorldUniforms(const Matrix4f& proj, const Vector4f& global
 
 void RenderDevice::Blt(Render::Texture* texture)
 {
-    Render::D3D11::Texture* tex = (Render::D3D11::Texture*)texture;
+    Texture* tex = (Texture*)texture;
     Blitter->Blt(BackBufferRT.GetPtr(), tex->GetSv().GetPtr());
-}
-
-void RenderDevice::Blt(Render::Texture* texture, uint32_t topLeftX, uint32_t topLeftY, uint32_t width, uint32_t height)
-{
-    Render::D3D11::Texture* tex = (Render::D3D11::Texture*)texture;
-    Blitter->Blt(BackBufferRT.GetPtr(), tex->GetSv().GetPtr(), topLeftX, topLeftY, width, height);
-}
-
-void RenderDevice::BltToTex(Render::Texture* src, Render::Texture* dest)
-{
-    Render::D3D11::Texture* srcd3d = (Render::D3D11::Texture*)src;
-    Render::D3D11::Texture* dstd3d = (Render::D3D11::Texture*)dest;
-    Blitter->Blt(dstd3d->GetRtv().GetPtr(), srcd3d->GetSv().GetPtr());
-}
-
-void RenderDevice::BltFlipCubemap(Render::Texture* /* src */, Render::Texture* /*temp*/)
-{
-    OVR_FAIL_M("Unimplemented");
 }
 
 void RenderDevice::Render(const Matrix4f& matrix, Model* model) 
@@ -2794,15 +2150,7 @@ void RenderDevice::Render(const Fill* fill, Render::Buffer* vertices, Render::Bu
     {
         if (shaders->GetShader(i))
         {
-            if (i != Shader_Geometry)
-            {
-                // Geometry shaders are used only for multiresolution. For
-                // multiresolution we populate GS constant buffers manually so
-                // we don't want to call UpdateBuffer here. If we have other use
-                // cases for geometry shaders emerge look into making this
-                // mechanism more generic.
-                ((ShaderBase*)shaders->GetShader(i))->UpdateBuffer(UniformBuffers[i]);
-            }
+            ((ShaderBase*)shaders->GetShader(i))->UpdateBuffer(UniformBuffers[i]);
             ((ShaderBase*)shaders->GetShader(i))->SetUniformBuffer(UniformBuffers[i]);
         }
     }
@@ -2838,16 +2186,6 @@ void RenderDevice::Render(const Fill* fill, Render::Buffer* vertices, Render::Bu
     else
     {
         Context->Draw(count, 0);
-    }
-
-    // Disable geometry shader in case we set it above. This isn't ideal but
-    // there's not a better way to work this into the shader abstraction. We
-    // could try and disable the shader if it's not part of the shader set, but
-    // the abstraction depends on having a valid pointer to a shader so we have
-    // no good way calling back into the rendering API (D3D11/D3D12/OpenGL).
-    if (shaders->GetShader(Shader_Geometry))
-    {
-        Context->GSSetShader(nullptr, nullptr, 0);
     }
 }
 
@@ -2954,7 +2292,6 @@ void RenderDevice::EndGpuEvent()
         UserAnnotation->EndEvent();
 #endif
 }
-
 
 
 }}} // namespace OVR::Render::D3D11

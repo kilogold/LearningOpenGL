@@ -9,7 +9,7 @@
                                         td.Format = OVR_FORMAT_R8G8B8A8_UNORM_SRGB;                                 \
                                         td.Width = DIRECTX.WinSizeW;                                                \
                                         td.Height = DIRECTX.WinSizeH;                                               \
-                                        ovr_CreateMirrorTextureWithOptionsDX(session, DIRECTX.Device, &td, &mirrorTexture);    \
+                                        ovr_CreateMirrorTextureDX(session, DIRECTX.Device, &td, &mirrorTexture);    \
 
 #define STAGE6_RenderMirror             ID3D11Resource* resource = nullptr;                                         \
                                         ovr_GetMirrorTextureBufferDX(session, mirrorTexture, IID_PPV_ARGS(&resource));  \

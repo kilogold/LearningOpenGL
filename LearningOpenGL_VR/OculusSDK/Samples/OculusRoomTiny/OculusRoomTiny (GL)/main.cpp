@@ -121,7 +121,7 @@ static bool MainLoop(bool retryCreate)
     desc.Format = OVR_FORMAT_R8G8B8A8_UNORM_SRGB;
 
     // Create mirror texture and an FBO used to copy mirror texture to back buffer
-    result = ovr_CreateMirrorTextureWithOptionsGL(session, &desc, &mirrorTexture);
+    result = ovr_CreateMirrorTextureGL(session, &desc, &mirrorTexture);
     if (!OVR_SUCCESS(result))
     {
         if (retryCreate) goto Done;
@@ -177,21 +177,20 @@ static bool MainLoop(bool retryCreate)
 
             // Animate the cube
             static float cubeClock = 0;
-            if (!sessionStatus.OverlayPresent) // Pause the application if an overlay is present.
-                roomScene->Models[0]->Pos = Vector3f(9 * (float)sin(cubeClock), 3, 9 * (float)cos(cubeClock += 0.015f));
+            roomScene->Models[0]->Pos = Vector3f(9 * (float)sin(cubeClock), 3, 9 * (float)cos(cubeClock += 0.015f));
 
-            // Call ovr_GetRenderDesc each frame to get the ovrEyeRenderDesc, as the returned values (e.g. HmdToEyePose) may change at runtime.
+            // Call ovr_GetRenderDesc each frame to get the ovrEyeRenderDesc, as the returned values (e.g. HmdToEyeOffset) may change at runtime.
             ovrEyeRenderDesc eyeRenderDesc[2];
             eyeRenderDesc[0] = ovr_GetRenderDesc(session, ovrEye_Left, hmdDesc.DefaultEyeFov[0]);
             eyeRenderDesc[1] = ovr_GetRenderDesc(session, ovrEye_Right, hmdDesc.DefaultEyeFov[1]);
 
             // Get eye poses, feeding in correct IPD offset
-            ovrPosef EyeRenderPose[2];
-            ovrPosef HmdToEyePose[2] = { eyeRenderDesc[0].HmdToEyePose,
-                                         eyeRenderDesc[1].HmdToEyePose};
+            ovrPosef                  EyeRenderPose[2];
+            ovrVector3f               HmdToEyeOffset[2] = { eyeRenderDesc[0].HmdToEyeOffset,
+                                                            eyeRenderDesc[1].HmdToEyeOffset };
 
             double sensorSampleTime;    // sensorSampleTime is fed into the layer later
-            ovr_GetEyePoses(session, frameIndex, ovrTrue, HmdToEyePose, EyeRenderPose, &sensorSampleTime);
+            ovr_GetEyePoses(session, frameIndex, ovrTrue, HmdToEyeOffset, EyeRenderPose, &sensorSampleTime);
 
             // Render Scene to Eye Buffers
             for (int eye = 0; eye < 2; ++eye)
@@ -279,8 +278,7 @@ Done:
 int WINAPI WinMain(HINSTANCE hinst, HINSTANCE, LPSTR, int)
 {
     // Initializes LibOVR, and the Rift
-	ovrInitParams initParams = { ovrInit_RequestVersion | ovrInit_FocusAware, OVR_MINOR_VERSION, NULL, 0, 0 };
-	ovrResult result = ovr_Initialize(&initParams);
+    ovrResult result = ovr_Initialize(nullptr);
     VALIDATE(OVR_SUCCESS(result), "Failed to initialize libOVR.");
 
     VALIDATE(Platform.InitWindow(hinst, L"Oculus Room Tiny (GL)"), "Failed to open window.");

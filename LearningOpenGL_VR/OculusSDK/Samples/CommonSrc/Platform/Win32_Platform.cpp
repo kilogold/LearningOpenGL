@@ -316,12 +316,6 @@ LRESULT CALLBACK PlatformCore::systemWindowProc(HWND hwnd, UINT msg, WPARAM wp, 
 
 LRESULT PlatformCore::WindowProc(UINT msg, WPARAM wp, LPARAM lp)
 {
-    if (!Quit)
-    {
-        // Application GUI processes messages.
-        pApp->OnWindowProc(hWnd, msg, wp, lp);
-    }
-
     KeyCode keyCode;
 
     switch (msg)
@@ -425,6 +419,8 @@ LRESULT PlatformCore::WindowProc(UINT msg, WPARAM wp, LPARAM lp)
         break;
 
     case WM_LBUTTONDOWN:
+        //App->OnMouseButton(0, 
+
         ::SetCapture(hWnd);
 
         if (MMode == Mouse_RelativeEscaped)
@@ -655,13 +651,9 @@ int WINAPI WinMain(HINSTANCE hinst, HINSTANCE prevInst, LPSTR inArgs, int show)
 
         const char* p = inArgs;
         const char* pstart = inArgs;
-        bool inQuotes = false;
         while (*p)
         {
-            if (*p == '\"')
-                inQuotes = !inQuotes;
-
-            if (!inQuotes && *p == ' ')
+            if (*p == ' ')
             {
                 args.push_back(std::string(pstart, p - pstart));
                 while (*p == ' ')

@@ -31,8 +31,6 @@ limitations under the License.
 
 #include <vector>
 #include <string>
-#include <array>
-
 
 namespace OVR { namespace Render {
 
@@ -83,10 +81,6 @@ public:
 _(MV) \
 _(MVP)
 
-#define LIST_GEOMETRY_SHADERS(_) \
-_(OctilinearEmulated) \
-_(OctilinearFastGs)
-
 #define LIST_FRAGMENT_SHADERS(_) \
 _(Solid) \
 _(Gouraud) \
@@ -97,8 +91,7 @@ _(AlphaBlendedTexture) \
 _(AlphaPremultTexture) \
 _(LitGouraud) \
 _(LitTexture) \
-_(MultiTexture) \
-_(MultiTextureHeavyAluEarlyZ)
+_(MultiTexture)
 
 enum BuiltinVertexShaders
 {
@@ -106,15 +99,6 @@ enum BuiltinVertexShaders
     LIST_VERTEX_SHADERS(MK_VERTEX_SHADER_ENUM)
     #undef MK_VERTEX_SHADER_ENUM
     VShader_Count
-};
-
-enum BuiltinGeometryShaders
-{
-    #define MK_GEOMETRY_SHADER_ENUM(name) GShader_##name,
-    LIST_GEOMETRY_SHADERS(MK_GEOMETRY_SHADER_ENUM)
-    #undef MK_GEOMETRY_SHADER_ENUM
-    GShader_Count,
-    GShader_Disabled
 };
 
 enum BuiltinFragmentShaders
@@ -144,7 +128,7 @@ enum BufferUsage
     Buffer_ReadOnly = 0x100, // Buffer must be created with Data().
 };
 
-enum TextureFormat : uint64_t
+enum TextureFormat
 {
     //////////////////////////////////////////////////////////////////////////
     // These correspond to the available OVR_FORMAT enum except sRGB versions
@@ -156,7 +140,6 @@ enum TextureFormat : uint64_t
     Texture_BGRA8           = 0x50, // allows sRGB
     Texture_BGRX            = 0x60, // allows sRGB
     Texture_RGBA16f         = 0x70,
-    Texture_R11G11B10f      = 0x80,
     // End of OVR_FORMAT corresponding formats
     //////////////////////////////////////////////////////////////////////////
 
@@ -171,35 +154,24 @@ enum TextureFormat : uint64_t
     Texture_BC6U            = 0x241,
     Texture_BC7             = 0x250,
     
-    Texture_Depth32f        = 0x1000,   // aliased as default Texture_Depth
-    Texture_Depth24Stencil8 = 0x2000,
-    Texture_Depth32fStencil8= 0x4000,
-    Texture_Depth16         = 0x8000,
+    Texture_Depth32f        = 0x10000,   // aliased as default Texture_Depth
+    Texture_Depth24Stencil8 = 0x20000,
+    Texture_Depth32fStencil8= 0x40000,
+    Texture_Depth16         = 0x80000,
 	
-    Texture_DepthMask       = 0xf000,
-    Texture_TypeMask        = 0xfff0,
+    Texture_DepthMask       = 0xf0000,
+    Texture_TypeMask        = 0xffff0,
     Texture_Compressed      = 0x200,
     Texture_SamplesMask     = 0x000f,
 
-    Texture_RenderTarget    = 0x10000,
-    Texture_SampleDepth     = 0x20000,
-    Texture_GenMipmaps      = 0x40000,
-    Texture_SRGB            = 0x80000,
-    Texture_Mirror          = 0x100000,
-    Texture_SwapTextureSet  = 0x200000,
-    Texture_SwapTextureSetStatic  = 0x400000,
-    Texture_Hdcp            = 0x800000,
-    Texture_CpuDynamic      = 0x1000000,    // only used by D3D11
-    Texture_GenMipmapsBySdk = 0x2000000,    // not compatible with Texture_GenMipmaps
-
-    Texture_Cubemap         = 0x4000000,
-
-    Texture_MirrorPostDistortion        = 0x10000000,
-    Texture_MirrorLeftEyeOnly           = 0x20000000,
-    Texture_MirrorRightEyeOnly          = 0x40000000,
-    Texture_MirrorIncludeGuardian       = 0x80000000,
-    Texture_MirrorIncludeNotifications  = 0x100000000,
-    Texture_MirrorIncludeSystemGui      = 0x200000000,
+    Texture_RenderTarget    = 0x100000,
+	Texture_SampleDepth		= 0x200000,
+    Texture_GenMipmaps      = 0x400000,
+    Texture_SRGB			= 0x800000,
+    Texture_Mirror          = 0x1000000,
+    Texture_SwapTextureSet  = 0x2000000,
+    Texture_SwapTextureSetStatic  = 0x4000000,
+    Texture_Hdcp            = 0x8000000,
 };
 
 enum SampleMode
@@ -413,7 +385,7 @@ public:
     virtual int GetWidth() const = 0;
     virtual int GetHeight() const = 0;
     virtual int GetSamples() const { return 1; }
-    virtual uint64_t GetFormat() const = 0;
+    virtual int GetFormat() const = 0;
 
     virtual void SetSampleMode(int sm) = 0;
     virtual void Set(int slot, ShaderStage stage = Shader_Fragment) const = 0;
@@ -423,8 +395,6 @@ public:
     virtual void GenerateMips() = 0;
     // Used to commit changes to the texture swap chain
     virtual void Commit() = 0;
-
-    virtual void Update(void* data, uint32_t height, uint32_t stride) { OVR_UNUSED3(data, height, stride); }
 };
 
 struct RenderTarget
@@ -542,7 +512,9 @@ struct DistortionVertex
 */
 struct DistortionComputePin   /*TPH pointlessly existing*/    // Needs to match the one(s) declared in Render_D3D1X_Device.cpp inside the shaders.
 {
+    Vector2f TanEyeAnglesR;
     Vector2f TanEyeAnglesG;
+    Vector2f TanEyeAnglesB;
     Color Col;
     int padding[1];
 };
@@ -888,7 +860,7 @@ public:
 
     virtual void Clear(float r = 0, float g = 0, float b = 0, float a = 1,
                        float depth = 1,
-                       bool clearColor = true, bool clearDepth = true, int faceIndex = -1) = 0;
+                       bool clearColor = true, bool clearDepth = true) = 0;
 
     inline void Clear(const Color &c, float depth = 1)
     {
@@ -903,15 +875,12 @@ public:
 
     // Resources
     virtual Buffer*  CreateBuffer() = 0;
-    virtual Texture* CreateTexture(uint64_t format, int width, int height, const void* data, int mipcount = 1, ovrResult* error = nullptr) = 0;
+    virtual Texture* CreateTexture(int format, int width, int height, const void* data, int mipcount = 1, ovrResult* error = nullptr) = 0;
 
     virtual ShaderSet* CreateShaderSet() { return new ShaderSetMatrixTranspose; }
     virtual Shader* LoadBuiltinShader(ShaderStage stage, int shader) = 0;
 
     virtual void Blt(Texture* texture) = 0;
-    virtual void Blt(Texture* texture, uint32_t topLeftX, uint32_t topLeftY, uint32_t width, uint32_t height) = 0;
-    virtual void BltToTex(Texture* src, Texture* dest) = 0;
-    virtual void BltFlipCubemap(Render::Texture* src, Render::Texture* temp) = 0;
 
     // Begin drawing directly to the currently selected render target, no post-processing.
     virtual void BeginRendering() = 0;
@@ -925,8 +894,7 @@ public:
 
     // Texture must have been created with Texture_RenderTarget. Use NULL for the default render target.
     // NULL depth buffer means use an internal, temporary one.
-    // If faceIndex is set to anything over -1, it indicates that the texture could be a cubemap
-    virtual void SetRenderTarget(Texture* color, Texture* depth = nullptr, Texture* stencil = nullptr, int faceIndex = -1) = 0;
+    virtual void SetRenderTarget(Texture* color, Texture* depth = nullptr, Texture* stencil = nullptr) = 0;
     void SetRenderTarget(const RenderTarget& renderTarget)
     {
         SetRenderTarget(renderTarget.pColorTex, renderTarget.pDepthTex);
@@ -937,7 +905,6 @@ public:
     void SetProjection(const Matrix4f& proj);
     void SetGlobalTint(const Vector4f& globalTint);
     virtual void SetWorldUniforms(const Matrix4f& proj, const Vector4f& globalTint) = 0;
-    virtual Texture* GetDepthBuffer(int w, int h, int ms, TextureFormat depthFormat = Texture_Depth32f) = 0;
 
     // The data is not copied, it must remain valid until the end of the frame
     virtual void SetLighting(const LightingParams* light);
@@ -949,7 +916,6 @@ public:
         Cull_Front,
     };
 
-    virtual void EnableScissor(bool /*enabled*/) { OVR_ASSERT(false); }
     virtual void SetCullMode(CullMode cullMode) = 0;
 
     // The index 0 is reserved for non-buffer uniforms, and so cannot be used with this function.
@@ -994,43 +960,10 @@ public:
         return TotalTextureMemoryUsage;
     }
 
-    uint32_t ConvertFormatToMirrorOptions(uint64_t format)
-    {
-        uint32_t mirrorOptions = 0;
-        if (format & Texture_MirrorPostDistortion)
-        {
-            mirrorOptions |= ovrMirrorOption_PostDistortion;
-        }
-        if (format & Texture_MirrorLeftEyeOnly)
-        {
-            mirrorOptions |= ovrMirrorOption_LeftEyeOnly;
-        }
-        else if (format & Texture_MirrorRightEyeOnly)
-        {
-            mirrorOptions |= ovrMirrorOption_RightEyeOnly;
-        }
-        if (format & Texture_MirrorIncludeGuardian)
-        {
-            mirrorOptions |= ovrMirrorOption_IncludeGuardian;
-        }
-        if (format & Texture_MirrorIncludeNotifications)
-        {
-            mirrorOptions |= ovrMirrorOption_IncludeNotifications;
-        }
-        if (format & Texture_MirrorIncludeSystemGui)
-        {
-            mirrorOptions |= ovrMirrorOption_IncludeSystemGui;
-        }
-        return mirrorOptions;
-    }
-
     // GPU Profiling
     // using (void) to avoid "unused param" warnings
     virtual void BeginGpuEvent(const char* markerText, uint32_t markerColor) { (void)markerText; (void)markerColor; }
     virtual void EndGpuEvent() { }
-
-
-    virtual bool SaveCubemapTexture(Render::Texture* tex, Vector3f transl, const std::string& filePath, std::string* error) = 0;
 
 private:
 };
@@ -1064,7 +997,7 @@ private:
 //-----------------------------------------------------------------------------------
 
 int GetNumMipLevels(int w, int h);
-int GetTextureSize(uint64_t format, int w, int h);
+int GetTextureSize(int format, int w, int h);
 
 // Filter an rgba image with a 2x2 box filter, for mipmaps.
 // Image size must be a power of 2.

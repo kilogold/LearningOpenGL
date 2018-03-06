@@ -49,7 +49,6 @@ limitations under the License.
 
 #include <vector>
 #include <string>
-#include <array>
 
 // Filename to be loaded by default, searching specified paths.
 #define WORLDDEMO_ASSET_FILE  "Tuscany.xml"
@@ -59,8 +58,6 @@ limitations under the License.
 using namespace OVR;
 using namespace OVR::OvrPlatform;
 using namespace OVR::Render;
-
-
 
 
 //-------------------------------------------------------------------------------------
@@ -132,8 +129,7 @@ public:
     void		 ClearScene();
     void         PopulateOptionMenu();
     bool         SetMenuValue ( std::string menuFullName, std::string newValue );
-    bool         SetupMixedRealityCapture();
-    void         CleanupMixedRealityCapture();
+
 
     // Computes all of the Hmd values and configures render targets.
     ovrResult    CalculateHmdValues();
@@ -148,15 +144,11 @@ public:
                                           const ovrInputState& is, unsigned controllerType);
 
     // Renders full stereo scene for one eye.
-    void         RenderEyeView(ovrEyeType eye, const Matrix4f* optionalMatrix = nullptr, bool onlyRenderWorld = false);
+    void         RenderEyeView(ovrEyeType eye);
     void         RenderAnimatedBlocks(ovrEyeType eye, double appTime);
     void         RenderGrid(ovrEyeType eye, Recti viewport);
     void         RenderControllers(ovrEyeType eye);
     void         RenderCockpitPanels(ovrEyeType eye);
-    void         RenderCamNearFarHandsView();
-
-    void         RenderCubemap();
-    bool         CubeRendered = false; // Render cubemap once
 
     Matrix4f     CalculateViewFromPose(const Posef& pose);
 
@@ -174,12 +166,13 @@ public:
     void         ProcessDeviceNotificationQueue();
 
     void         DisplayLastErrorMessageBox(const char* pMessage);
-
+    
     // ***** Callbacks for Menu option changes
 
     // These contain extra actions to be taken in addition to switching the state.
     void HmdSettingChange(OptionVar* = 0)   { HmdSettingsChanged = true; }
-    void MirrorSettingChange(OptionVar* = 0);
+    void MirrorSettingChange(OptionVar* = 0)
+    { HmdSettingsChanged = true; NotificationTimeout = ovr_GetTimeInSeconds() + 10.0f;}
 
     void PerfHudSettingChange(OptionVar* = 0) { ovr_SetInt(Session, OVR_PERF_HUD_MODE, (int)PerfHudMode); }
 
@@ -203,18 +196,10 @@ public:
     void WindowSizeToNativeResChange(OptionVar* = 0);
 
     void ResetHmdPose(OptionVar* = 0);
-    void SpecifyTrackingOrigin(OptionVar* = 0);
-
-    void MultiresTexLayoutChanged(OptionVar* = 0);
-    void MultiresEmulatedChanged(OptionVar* = 0);
-    void MultiresEarlyZAndAluChanged(OptionVar* = 0);
-    void MultiresParamsChanged(OptionVar* = 0);
 
     void UpdatedTrackingOriginType(OptionVar* = 0);
 
     void TestUpdateFirmware(OptionVar* = 0);
-
-    unsigned int createProjectionModifier();
 
 protected:
     ExceptionHandler     OVR_ExceptionHandler;
@@ -230,7 +215,7 @@ protected:
     int                 FirstScreenInCycle;
     bool                SupportsSrgbSwitching;
     bool                SupportsMultisampling;
-    bool                SupportsDepthSubmit;
+    bool                SupportsDepthMultisampling;
     float               ActiveGammaCurve;
     float               SrgbGammaCurve;
     bool                MirrorIsSrgb;
@@ -251,20 +236,9 @@ protected:
         Rendertarget_Menu,
         Rendertarget_LAST
     };
-
-    enum EyeRenderPoseEnum
-    {
-        EyeRenderPose_Left = 0,
-        EyeRenderPose_Right,
-        EyeRenderPose_ExternalCamera,
-        EyeRenderPose_Count
-    };
-
-    // Last render target for eye FOV buffers.
-    static const int RenderTarget_EyeLast = Rendertarget_BothEyes + 1;
-
     RenderTarget        RenderTargets[Rendertarget_LAST];
-    RenderTarget*       DrawEyeTargets[Rendertarget_LAST]; // the buffers we'll actually render to
+    RenderTarget        MsaaRenderTargets[Rendertarget_LAST];
+    RenderTarget*       DrawEyeTargets[Rendertarget_LAST]; // the buffers we'll actually render to (could be MSAA)
     static const bool   AllowMsaaTargets[Rendertarget_LAST]; // whether or not we allow the layer to use MSAA
     static const bool   UseDepth[Rendertarget_LAST]; // whether or not we need depth buffers for this layer
     int                 GenMipCount[Rendertarget_LAST];   // number of mips currently used on render target
@@ -276,7 +250,7 @@ protected:
     ovrEyeRenderDesc    EyeRenderDesc[2];
     Matrix4f            Projection[2];          // Projection matrix for eye.
     Matrix4f            OrthoProjection[2];     // Projection for 2D.
-    ovrPosef            EyeRenderPose[EyeRenderPose_Count];       // Poses we used for rendering. (left eye, right eye, external camera)
+    ovrPosef            EyeRenderPose[2];       // Poses we used for rendering.
     Ptr<Texture>        EyeTexture[2];
     Ptr<Texture>        EyeDepthTexture[2];
     Recti               EyeRenderViewports[2];
@@ -295,10 +269,6 @@ protected:
 
     // Times a single frame.
     double              LastUpdate;
-
-    // Touch Haptics
-    ovrHapticsClip      TouchHapticsClip;
-    int                 TouchHapticsPlayIndex;
 
     // Loaded data.
     std::string	                          MainFilePath;
@@ -330,30 +300,7 @@ protected:
     ovrControllerType   LastControllerType;
 
     Player				ThePlayer;
-    Matrix4f            ViewFromWorld[3];   // One per eye; external camera view matrix
-
-    enum RenderControllerType
-    {
-        RenderController_None = 0,
-        RenderController_AvatarHands,
-        RenderController_Touches,
-        RenderController_Both,
-        RenderController_Count
-    };
-
-    // External camera for Mixed Reality Capture
-    static const int    MaxNumberOfCameras = 22;
-    unsigned int        NumberOfCameras;
-    int                 CurrentCameraID;
-    std::array<ovrExternalCamera, MaxNumberOfCameras> ExternalCameras;
-    float               DistanceToCamInMeters = 0.0f;      // distance from the player to the external camera
-    float               NearFarOverlapInMeters = 0.1f;     // to avoid the seam between the foreground and background images
-    RenderControllerType RenderControllerFlag = RenderController_Both;
-    Matrix4f            CamProjection;			// External camera projection matrix
-    Recti               NearRenderViewport;
-    Recti               FarRenderViewport;
-    Recti               HandsRenderViewport;
-
+    Matrix4f            ViewFromWorld[2];   // One per eye.
     Scene               MainScene;
     Scene               SmallGreenCube;
     Scene               SmallOculusCube;
@@ -371,7 +318,6 @@ protected:
     void                PopulateBoundaryScene(Scene* scene);
     void                RenderBoundaryScene(Matrix4f& view);
     void                HandleBoundaryControls();
-    void                HandleHaptics();
 
     // Small floor models used to visualize seated floor level under player.
     // We allow switching between two modes: [0] = solid, [1] = donut shaped.
@@ -386,15 +332,12 @@ protected:
     Ptr<Texture>        CockpitPanelTexture;
     Ptr<Texture>        LoadingTexture;
 
-    Ptr<Texture>        CubemapLoadTexture;
-    Ptr<Texture>        CubemapRenderTexture;
-
     // Last frame asn sensor data reported by BeginFrame().
     double              HmdFrameTiming;
     unsigned            HmdStatus;
     int                 TrackingTrackerCount = 0;
     int                 ConnectedTrackerCount = 0;
-
+  
     // Overlay notifications time out in
     double              NotificationTimeout;
 
@@ -431,7 +374,6 @@ protected:
     ovrInputState       ActiveControllerState;
     ovrPosef            HandPoses[2];
     unsigned int        HandStatus[2];
-    ovrPosef            TrackedObjectPose;
 
     // The size of the rendered HUD in pixels. If size==0, there's no HUD at the moment.
     Recti               HudRenderedSize;
@@ -450,7 +392,6 @@ protected:
         //EyeTextureFormat_BGRA8,       - sRGB format is not supported in OpenGL mode, so don't use this either
         //EyeTextureFormat_BGRX8,       - Not supported in OpenGL mode
         EyeTextureFormat_RGBA16F,
-        EyeTextureFormat_R11G11B10F,
         // Srgb formats below here to minimize srgb-to-linear switching and
         // avoid unnecessary texture asset reloading with each switch
         EyeTextureFormat_RGBA8_SRGB,
@@ -540,11 +481,12 @@ protected:
     // if head pitch < MenuHudMaxPitchToOrientToHeadRoll, then we ignore head roll on menu orientation
     float               MenuHudMaxPitchToOrientToHeadRoll;
     bool				MenuHudAlwaysOnMirrorWindow;
-
+    
     bool                TimewarpRenderIntervalEnabled;
     float               TimewarpRenderIntervalInSeconds;
     bool                NeverRenderedIntoEyeTextures;
     bool                FreezeEyeUpdate;
+    int                 ComputeShaderEnabled;       // 0 = default, 1=on, 2=off
     bool                LayersEnabled;              // Using layers, or just rendering quads into the eye buffers?
     bool                Layer0HighQuality;
     int                 Layer0GenMipCount;
@@ -565,15 +507,6 @@ protected:
     bool                LayerHudMenuEnabled;        // So you can hide the menu with Shift+Tab while toggling visual things.
     bool                LayerHudMenuHighQuality;
     bool                LayerLoadingHighQuality;
-
-    bool                LayerCylinderEnabled;
-    bool                LayerCylinderHighQuality;
-    float               LayerCylinderRadius;
-    float               LayerCylinderAspectRatio;
-    float               LayerCylinderAngle;
-
-    bool                LayerCubemapSaveOnRender;
-	  bool                LayerCubemapHighQuality;
 
     // Other global settings.
     float               CenterPupilDepthMeters;
@@ -624,7 +557,7 @@ protected:
     Vector3f                DebugHudStereoGuideYawPitchRollDeg;
     Vector3f                DebugHudStereoGuideYawPitchRollRad;
     Vector4f                DebugHudStereoGuideColor;
-
+    
 
     // ***** Scene Rendering Modes
 
@@ -681,27 +614,6 @@ protected:
 
         ComfortTurn_LAST
     }                   ComfortTurnMode;
-    
-    enum MirrorOptionStage
-    {
-        MirrorOptionStage_Rectilinear = 0,
-        MirrorOptionStage_PostDistortion = 1,
-    } CurrentMirrorOptionStage;
-
-    enum MirrorOptionEyes
-    {
-        MirrorOptionEyes_Both = 0,
-        MirrorOptionEyes_LeftOnly = 1,
-        MirrorOptionEyes_RightOnly = 2,
-    } CurrentMirrorOptionEyes;
-
-    bool CurrentMirrorOptionCaptureGuardian;
-    bool CurrentMirrorOptionCaptureNotifications;
-    bool CurrentMirrorOptionCaptureSystemGui;
-    uint64_t CurrentMirrorOptionsFormat;
-    bool MirrorOptionsChanged;
-
-    uint64_t ConvertMirrorOptionsToMirrorFormatFlags();
 
     // Whether we are displaying animated blocks and what type.
     int                 BlocksShowType;
@@ -720,16 +632,15 @@ protected:
     bool				VisualizeSeatLevel;
 	bool                VisualizeTracker;
     bool				Sitting;
-    bool				SittingAutoSwitch;
+    bool				SittingAutoSwitch;	
     float				ExtraSittingAltitude;
     double				TransitionToSitTime;
     double				TransitionToStandTime;
     // Use "donut shape" circle with a hole instead of a filled circle
-    bool				DonutFloorVisual;
+    bool				DonutFloorVisual; 
 
     bool                ShowCalibratedOrigin;
     Posef               CalibratedTrackingOrigin;
-    Vector4f            ProvidedTrackingOriginTranslationYaw;
 
     // User configurable options, brought up by 'Tab' key.
     // Also handles shortcuts and pop-up overlay messages.
@@ -746,21 +657,20 @@ protected:
     // Will contain the time when the HMD sensor was sampled and passed into the EyeFov layer
     double              SensorSampleTimestamp;
 
-
+    
     // **** Rendering Layer Setup
 
     enum LayerNumbers
     {
         LayerNum_MainEye = 0,
-        LayerNum_Cubemap = 1, // Switch Cubemap and MainEye layers when cubemap layer is enabled
-        LayerNum_Layer1 = 2,
-        LayerNum_Layer2 = 3,
-        LayerNum_Layer3 = 4,
-        LayerNum_Layer4 = 5,
-        LayerNum_CockpitFirst = 6,
-        LayerNum_CockpitLast = 6 + 4,
-        LayerNum_Loading = 11,
-        LayerNum_Cylinder = 12,
+        LayerNum_Layer1 = 1,
+        LayerNum_Layer2 = 2,
+        LayerNum_Layer3 = 3,
+        LayerNum_Layer4 = 4,
+        LayerNum_CockpitFirst = 5,
+        LayerNum_CockpitLast = 5 + 4,
+        LayerNum_Loading = 10,
+
         LayerNum_Hud = ovrMaxLayerCount - 2,
         LayerNum_Menu = ovrMaxLayerCount - 1,
         // Total # of layers.
@@ -769,7 +679,6 @@ protected:
 
     // Complete layer list. Some entries may be null.
     ovrLayerHeader*     LayerList[LayerNum_TotalLayers];
-
 
     // Individual layer objects.
     // EyeLayer can be either regular or with depth, so use a union type.
@@ -781,23 +690,12 @@ protected:
     ovrLayerQuad        HudLayer;
     ovrLayerQuad        MenuLayer;
     ovrLayerQuad        LoadingLayer;
-    ovrLayerCylinder    CylinderLayer;
-    ovrLayerCube        CubemapLayer;
-
+    
     // Menu position & state info.
     Posef               MenuPose;
     bool                MenuIsRotating;
     bool                MenuIsTranslating;
     Vector3f            MenuTranslationOffset;
-
-    enum CubemapMode
-    {
-        Cubemap_Off,
-        Cubemap_Render,
-        Cubemap_Load,
-    } LayerCubemap;
-
-
 };
 
 

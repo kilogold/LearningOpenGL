@@ -36,18 +36,18 @@ void OculusWorldDemoApp::InitMainFilePath()
     // We try alternative relative locations for the file.
     const std::string contentBase = pPlatform->GetContentDirectory() + "/" + WORLDDEMO_ASSET_PATH;
     const char* baseDirectories[] = { "",
-        contentBase.c_str(),
-#ifdef SHRDIR
-#define STR1(x) #x
-#define STR(x)  STR1(x)
-        STR(SHRDIR) "/OculusWorldDemo/Assets/Tuscany/"
-#endif
-    };
+                                      contentBase.c_str(),
+                                      #ifdef SHRDIR
+                                          #define STR1(x) #x
+                                          #define STR(x)  STR1(x)
+                                          STR(SHRDIR) "/OculusWorldDemo/Assets/Tuscany/"
+                                      #endif
+                                      };
     std::string newPath;
 
-    for (size_t i = 0; i < OVR_ARRAY_COUNT(baseDirectories); ++i)
+    for(size_t i = 0; i < OVR_ARRAY_COUNT(baseDirectories); ++i)
     {
-        newPath = baseDirectories[i];
+        newPath  = baseDirectories[i];
         newPath += WORLDDEMO_ASSET_FILE;
 
         WriteLog("Trying to load the scene at: %s...", newPath.c_str());
@@ -62,7 +62,6 @@ void OculusWorldDemoApp::InitMainFilePath()
 
     WriteLog("Unable to find any version of %s. Do you have your working directory set right?", WORLDDEMO_ASSET_FILE);
 }
-
 
 // Creates a grid of cubes.
 void PopulateCubeFieldScene(Scene* scene, Fill* fill,
@@ -134,14 +133,14 @@ void AddFloorCircleModelVertices(Model* m, float radius)
 
     // Center vertex
     m->AddVertex(0.0f, my, 0.0f, Color(255, 255, 255, 255),
-                 0.5f, 0.5f); // u, v
+                 0.5f, 0.5f); // u, v	
 
     for (int i = 0; i < totalSteps; i++)
     {
         float deltaAngle = (MATH_FLOAT_PI * 2.0f) / totalSteps;
         float x = cosf(deltaAngle * i);
         float z = sinf(deltaAngle * i);
-
+        
         m->AddVertex(x * radius, my, z * radius, Color(255, 255, 255, 255),
                      0.5f + x * 0.5f, 0.5f + z * 0.5f); // u, v
 
@@ -162,7 +161,7 @@ void AddFloorCircleDonutModelVertices(Model* m, float radius)
     float	my		   = 0.0f;
     int		totalSteps = 60;
 
-    // "Donut"
+    // "Donut"	
     for (int i = 0; i < totalSteps; i++)
     {
         float deltaAngle = (MATH_FLOAT_PI * 2.0f) / totalSteps;
@@ -187,7 +186,7 @@ void AddFloorCircleDonutModelVertices(Model* m, float radius)
             m->AddTriangle(uint16_t(t), uint16_t(t + 3), uint16_t(t + 1));
             m->AddTriangle(uint16_t(t), uint16_t(t + 2), uint16_t(t + 3));
         }
-    }
+    }	
 }
 
 
@@ -196,19 +195,15 @@ void OculusWorldDemoApp::PopulateScene(const char *fileName)
 {
     ClearScene();
 
-    BuiltinGeometryShaders geomShader = GShader_Disabled;
-    bool heavyAluEnableEarlyZ = false;
-
-
-    XmlHandler xmlHandlerMain;
-    if(!xmlHandlerMain.ReadFile(fileName, pRender, &MainScene, &CollisionModels, &GroundCollisionModels, SrgbRequested, AnisotropicSample, geomShader, heavyAluEnableEarlyZ))
+    XmlHandler xmlHandler;
+    if(!xmlHandler.ReadFile(fileName, pRender, &MainScene, &CollisionModels, &GroundCollisionModels, SrgbRequested, AnisotropicSample))
     {
         Menu.SetPopupMessage("FILE LOAD FAILED");
         Menu.SetPopupTimeout(10.0f, true);
     }
 
     MainScene.SetAmbient(Color4f(1.0f, 1.0f, 1.0f, 1.0f));
-    
+
     std::string mainFilePathNoExtension = MainFilePath;
     StripExtension(mainFilePathNoExtension);
 
@@ -222,7 +217,7 @@ void OculusWorldDemoApp::PopulateScene(const char *fileName)
 
     Ptr<Fill> fillB = *CreateTextureFill(pRender, mainFilePathNoExtension + "_redCube.tga", fillTextureLoadFlags);
     PopulateCubeFieldScene(&RedCubesScene, fillB.GetPtr(), 10, 10, 10, Vector3f(0.0f, 0.0f, 0.0f), 0.4f);
-
+    
     Ptr<Fill> fillY = *CreateTextureFill(pRender, mainFilePathNoExtension + "_yellowCube.tga", fillTextureLoadFlags);
     PopulateCubeFieldScene(&YellowCubesScene, fillY.GetPtr(), 10, 10, 10, Vector3f(0.0f, 0.0f, 0.0f), 0.4f);
 
@@ -265,13 +260,9 @@ void OculusWorldDemoApp::PopulateScene(const char *fileName)
     if (imageFile->IsValid())
         HdcpTexture = *LoadTextureTgaTopDown(pRender, imageFile, textureLoadFlags | TextureLoad_Hdcp, 255);
 
-	  imageFile = *new SysFile((mainFilePathNoExtension + "_Cubemap.dds").c_str());
-	  if (imageFile->IsValid())
-		  CubemapLoadTexture = *LoadTextureDDSTopDown(pRender, imageFile, textureLoadFlags | Texture_Cubemap);
-
     XmlHandler xmlHandler2;
     std::string controllerFilename = GetPath(MainFilePath) + "LeftController.xml";
-    if (!xmlHandler2.ReadFile(controllerFilename.c_str(), pRender, &ControllerScene, NULL, NULL, false, false, geomShader, heavyAluEnableEarlyZ))
+    if (!xmlHandler2.ReadFile(controllerFilename.c_str(), pRender, &ControllerScene, NULL, NULL))
     {
         Menu.SetPopupMessage("CONTROLLER FILE LOAD FAILED");
         Menu.SetPopupTimeout(10.0f, true);
@@ -280,12 +271,12 @@ void OculusWorldDemoApp::PopulateScene(const char *fileName)
     ControllerScene.AddLight(Vector3f(0, -10.0f, 0), Color4f(.2f, .2f, .2f, 1.0f));
 
 
-    // Load "Floor Circle" models and textures - used to display floor for seated configuration.
+    // Load "Floor Circle" models and textures - used to display floor for seated configuration.	
     Ptr<File>	 floorImageFile    = *new SysFile((mainFilePathNoExtension + "_SitFloorConcrete.tga").c_str());
     Ptr<Texture> roundFloorTexture = *LoadTextureTgaTopDown(pRender, floorImageFile, textureLoadFlags, 220);
     if (roundFloorTexture)
         roundFloorTexture->SetSampleMode(Sample_Anisotropic | Sample_Repeat);
-
+    
     Ptr<ShaderFill> fill = *new ShaderFill(*pRender->CreateShaderSet());
     fill->GetShaders()->SetShader(pRender->LoadBuiltinShader(Shader_Vertex, VShader_MVP));
     fill->GetShaders()->SetShader(pRender->LoadBuiltinShader(Shader_Fragment, FShader_Texture));
@@ -331,7 +322,6 @@ void OculusWorldDemoApp::ClearScene()
     SmallOculusRedCube.Clear();
     GreenCubesScene.Clear();
     RedCubesScene.Clear();
-    YellowCubesScene.Clear();
     OculusCubesScene.Clear();
     ControllerScene.Clear();
     BoundaryScene.Clear();
@@ -606,35 +596,21 @@ void OculusWorldDemoApp::RenderControllers(ovrEyeType eye)
 
     pRender->SetCullMode(RenderDevice::Cull_Off);
 
+    if (ConnectedControllerTypes & ovrControllerType_LTouch)
     {
-        // render touches
-        if (ConnectedControllerTypes & ovrControllerType_LTouch)
-        {
-            Matrix4f scaleUp = Matrix4f::Scaling(1.0f);
-            Posef    worldPose = ThePlayer.VirtualWorldTransformfromRealPose(HandPoses[ovrHand_Left], TrackingOriginType);
-            Matrix4f playerPose(worldPose);
-            ControllerScene.Render(pRender, ViewFromWorld[eye] * playerPose * scaleUp);
-        }
-
-        if (ConnectedControllerTypes & ovrControllerType_RTouch)
-        {
-            Matrix4f scaleUp = Matrix4f::Scaling(-1.0f, 1.0f, 1.0f);
-            Posef    worldPose = ThePlayer.VirtualWorldTransformfromRealPose(HandPoses[ovrHand_Right], TrackingOriginType);
-            Matrix4f playerPose(worldPose);
-            ControllerScene.Render(pRender, ViewFromWorld[eye] * playerPose * scaleUp);
-        }
-    }
-    
-    if (ConnectedControllerTypes & ovrControllerType_Object0)
-    {
-        Matrix4f scaleUp = Matrix4f::Scaling(1.0f);
-        Posef    worldPose = ThePlayer.VirtualWorldTransformfromRealPose(TrackedObjectPose, TrackingOriginType);
+        Matrix4f scaleUp   = Matrix4f::Scaling(1.0f);
+        Posef    worldPose = ThePlayer.VirtualWorldTransformfromRealPose(HandPoses[ovrHand_Left], TrackingOriginType);
         Matrix4f playerPose(worldPose);
-        pRender->SetGlobalTint(Vector4f(0.0f, 1.0f, 1.0f, 1.0f));
         ControllerScene.Render(pRender, ViewFromWorld[eye] * playerPose * scaleUp);
-        pRender->SetGlobalTint(Vector4f(1.0f, 1.0f, 1.0f, 1.0f));
     }
 
+    if (ConnectedControllerTypes & ovrControllerType_RTouch)
+    {
+        Matrix4f scaleUp   = Matrix4f::Scaling(-1.0f, 1.0f, 1.0f);
+        Posef    worldPose = ThePlayer.VirtualWorldTransformfromRealPose(HandPoses[ovrHand_Right], TrackingOriginType);
+        Matrix4f playerPose(worldPose);
+        ControllerScene.Render(pRender, ViewFromWorld[eye] * playerPose * scaleUp);
+    }
     pRender->SetCullMode(RenderDevice::Cull_Back);
 }
 

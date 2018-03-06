@@ -277,28 +277,6 @@ static const char* MultiTextureFragShaderSrc =
     "   _FRAGCOLOR.rgb /= _FRAGCOLOR.a;\n"
     "}\n";
 
-static const char* MultiTextureHeavyAluEarlyZFragShaderSrc =
-    "uniform sampler2D Texture0;\n"
-    "uniform sampler2D Texture1;\n"
-
-    "_FS_IN vec4 oColor;\n"
-    "_FS_IN vec2 oTexCoord;\n"
-    "_FS_IN vec2 oTexCoord1;\n"
-
-    "_FRAGCOLOR_DECLARATION\n"
-
-    "void main()\n"
-    "{\n"
-    "    vec4 color1 = _TEXTURE(Texture0, oTexCoord);\n"
-    "    vec4 color2 = _TEXTURE(Texture1, oTexCoord1);\n"
-    "    color2.rgb = sqrt(color2.rgb);\n"
-    "    color2.rgb = color2.rgb * mix(0.2, 1.2, clamp(length(color2.rgb),0.0,1.0));\n"
-    "    _FRAGCOLOR = color1 * color2;\n"
-    "    _FRAGCOLOR.rgb *= oColor.rgb;\n"
-    "    _FRAGCOLOR.rgb /= _FRAGCOLOR.a;\n"
-    "    // TODO: Implement ALU heavy algorithm for OpenGL\n"
-    "}\n";
-
 
 static const char* VShaderSrcs[] =
 {
@@ -485,11 +463,6 @@ void RenderDevice::FillTexturedRect(float left, float top, float right, float bo
 
 Shader *RenderDevice::LoadBuiltinShader(ShaderStage stage, int shader)
 {
-    if ((stage == Shader_Fragment) && (shader == FShader_MultiTextureHeavyAluEarlyZ))
-    {
-        OVR_ASSERT(!"MultiTexture format with Heavy ALU & EarlyZ not implemented for OpenGL.");
-    }
-
     switch (stage)
     {
     case Shader_Vertex: return VertexShaders[shader];
@@ -569,10 +542,8 @@ void RenderDevice::RenderImage(float left, float top, float right, float bottom,
     glDisable(GL_BLEND);
 }
 
-void RenderDevice::Clear(float r, float g, float b, float a, float depth, bool clearColor /*= true*/, bool clearDepth /*= true*/, int faceIndex /*= -1*/)
+void RenderDevice::Clear(float r, float g, float b, float a, float depth, bool clearColor /*= true*/, bool clearDepth /*= true*/)
 {
-    OVR_UNUSED(faceIndex);
-
     glClearColor(r,g,b,a);
     glClearDepth(depth);
     glClear(
@@ -588,16 +559,13 @@ void RenderDevice::DeleteFills()
     DefaultTextureFillPremult.Clear();
 }
 
-Texture* RenderDevice::GetDepthBuffer(int w, int h, int ms, TextureFormat depthFormat)
-{
-    OVR_UNUSED(depthFormat);
 
-	  for (size_t i = 0; i < DepthBuffers.size(); i++)
+Texture* RenderDevice::GetDepthBuffer(int w, int h, int ms)
+{
+	for (size_t i = 0; i < DepthBuffers.size(); i++)
     {
-        if (w == DepthBuffers[i]->Width && h == DepthBuffers[i]->Height && ms == DepthBuffers[i]->GetSamples())
-        {
-            return DepthBuffers[i];
-        }
+		if (w == DepthBuffers[i]->Width && h == DepthBuffers[i]->Height && ms == DepthBuffers[i]->GetSamples())
+			return DepthBuffers[i];
     }
 
     Ptr<Texture> newDepth = *CreateTexture(Texture_Depth32f|Texture_RenderTarget|ms, w, h, NULL);
@@ -650,10 +618,9 @@ void RenderDevice::SetCullMode(CullMode cullMode)
     }
 }
 
-void RenderDevice::SetRenderTarget(Render::Texture* color, Render::Texture* depth, Render::Texture* stencil, int faceIndex)
+void RenderDevice::SetRenderTarget(Render::Texture* color, Render::Texture* depth, Render::Texture* stencil)
 {
     OVR_UNUSED(stencil);
-    OVR_UNUSED(faceIndex);
 
     CurRenderTarget = (Texture*)color;
     if (color == NULL)
@@ -668,18 +635,10 @@ void RenderDevice::SetRenderTarget(Render::Texture* color, Render::Texture* dept
         depth = GetDepthBuffer(color->GetWidth(), color->GetHeight(), sampleCount);
 
     glBindFramebuffer(GL_FRAMEBUFFER, CurrentFbo);
-    
+
     GLenum texTarget = (sampleCount > 1) ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D;
 
-    if (faceIndex >= 0 && (CurRenderTarget->GetFormat() & Texture_Cubemap))
-    {
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + faceIndex, ((Texture*)color)->GetTexId(), 0);
-    }
-    else
-    {
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, texTarget, ((Texture*)color)->GetTexId(), 0);
-    }
-
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, texTarget, ((Texture*)color)->GetTexId(), 0);
     if (depth)
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, texTarget, ((Texture*)depth)->GetTexId(), 0);
     else
@@ -693,6 +652,7 @@ void RenderDevice::SetRenderTarget(Render::Texture* color, Render::Texture* dept
         glDisable(GL_FRAMEBUFFER_SRGB);
 }
 
+
 void RenderDevice::SetWorldUniforms(const Matrix4f& proj, const Vector4f& globalTint)
 {
     Proj = proj.Transposed();
@@ -703,12 +663,6 @@ void RenderDevice::SetTexture(Render::ShaderStage, int slot, const Texture* t)
 {
     glActiveTexture(GL_TEXTURE0 + slot);
     glBindTexture((t->GetSamples() > 1) ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, ((Texture*)t)->GetTexId());
-}
-
-bool RenderDevice::SaveCubemapTexture(Render::Texture* /*tex*/, Vector3f /*transl*/, const std::string& /*filePath*/, std::string* /*error*/)
-{
-    OVR_FAIL_M("Unimplemented");
-    return false;
 }
 
 Buffer* RenderDevice::CreateBuffer()
@@ -741,22 +695,6 @@ void RenderDevice::Blt(Render::Texture* texture)
 {
     Texture* tex = (Texture*)texture;
     Blitter->Blt(tex->GetTexId());
-}
-
-void RenderDevice::Blt(Render::Texture* texture, uint32_t topLeftX, uint32_t topLeftY, uint32_t width, uint32_t height)
-{
-    Texture* tex = (Texture*)texture;
-    Blitter->Blt(tex->GetTexId(), topLeftX, topLeftY, width, height);
-}
-
-void RenderDevice::BltToTex(Render::Texture* /* src */, Render::Texture* /* dest */)
-{
-    OVR_ASSERT(!"Unimplemented");
-}
-
-void RenderDevice::BltFlipCubemap(Render::Texture* src, Render::Texture* temp)
-{
-    Blitter->BltCubemap(((Texture*)src)->GetTexId(), ((Texture*)temp)->GetTexId(), src->GetWidth());
 }
 
 void RenderDevice::Render(const Matrix4f& matrix, Model* model)
@@ -1098,7 +1036,7 @@ bool ShaderSet::SetUniform4x4f(const char* name, const Matrix4f& m)
     return 0;
 }
 
-Texture::Texture(ovrSession session, RenderDevice* r, uint64_t fmt, int w, int h, int samples)
+Texture::Texture(ovrSession session, RenderDevice* r, int fmt, int w, int h, int samples)
     : Session(session)
     , Ren(r)
     , TextureChain(nullptr)
@@ -1139,11 +1077,7 @@ void Texture::Set(int slot, Render::ShaderStage stage) const
 
 void Texture::SetSampleMode(int sm)
 {
-	  if (GetFormat() & Texture_Cubemap)
-          glBindTexture(GL_TEXTURE_CUBE_MAP, GetTexId());
-	  else
-          glBindTexture((GetSamples() > 1) ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, GetTexId());
-
+    glBindTexture((GetSamples() > 1) ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, GetTexId());
     switch (sm & Sample_FilterMask)
     {
     case Sample_Linear:
@@ -1189,12 +1123,6 @@ void Texture::SetSampleMode(int sm)
 
 void Texture::GenerateMips()
 {
-    if (Samples > 1)
-    {
-        OVR_FAIL(); // no MSAA textures should reach this code
-        return;
-    }
-
     if ((Format & Texture_GenMipmaps) == 0)
     {
         OVR_FAIL();
@@ -1214,7 +1142,7 @@ void Texture::GenerateMips()
             ovr_GetTextureSwapChainCurrentIndex(Session, TextureChain, &index);
         }
     }
-    
+
     glBindTexture(GL_TEXTURE_2D, GetTexId());
     glEnable(GL_TEXTURE_2D);
     glGenerateMipmap(GL_TEXTURE_2D);
@@ -1236,36 +1164,37 @@ void Texture::Commit()
     }
 }
 
-Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, const void* data, int mipcount, ovrResult* error)
+Texture* RenderDevice::CreateTexture(int format, int width, int height, const void* data, int mipcount, ovrResult* error)
 {
     if (error != nullptr)
         *error = ovrSuccess;
         
     bool furtherInitialization = true;
-    bool isCubeMap = false;
+
     bool isDepth = ((format & Texture_DepthMask) != 0);
-    bool isSRGB  = ((format & Texture_SRGB) != 0);
-    OVR_ASSERT_M(!(isSRGB && isDepth), "Depth formats and sRGB are incompatible texture flags.");
+    bool isSRGB = !isDepth && ((format & Texture_SRGB) != 0);
 
-    bool isFloatFormat = (((format & Texture_TypeMask) == Texture_RGBA16f) ||
-                          ((format & Texture_TypeMask) == Texture_R11G11B10f));
-
-    bool isCompressed = false;
-
-    // if this is a color texture that will be sent over to or received from OVRService, then force sRGB on it
+    // if this is a color texture that will be sent over to or recieved from OVRService, then force sRGB on it
     // we will keep rendering into it as if it's a linear-format texture
-    if (!isDepth && !isFloatFormat &&
+    if (!isDepth &&
         ((format & Texture_SwapTextureSet) || (format & Texture_SwapTextureSetStatic) || (format & Texture_Mirror)))
     {
+        // FIXME: This doesn't seem like the correct thing to do for e.g. F16!
         isSRGB = true;
     }
 
+    if ( (format & Texture_TypeMask) == Texture_RGBA16f )
+    {
+        // Shouldn't try to set sRGB on a float16.
+        OVR_ASSERT ( ( format & Texture_SRGB ) == 0 );
+    }
+
     GLenum   glformat = GL_RGBA, gltype = GL_UNSIGNED_BYTE;
-    GLenum internalFormat = isSRGB ? GL_SRGB8_ALPHA8 : glformat;
+    GLenum internalFormat = glformat;
     ovrTextureFormat ovrFormat = OVR_FORMAT_UNKNOWN;
     switch(format & Texture_TypeMask)
     {
-    case Texture_B5G6R5:
+    case Texture_B5G6R5:            
         glformat = GL_RGB565;
         ovrFormat = OVR_FORMAT_B5G6R5_UNORM;
         break;
@@ -1291,16 +1220,9 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
         break;
     case Texture_RGBA16f:
         glformat = GL_RGBA16F;
-        // float formats use special higher-precision internal formats and don't do sRGB
-        internalFormat = glformat;
         ovrFormat = OVR_FORMAT_R16G16B16A16_FLOAT;
         break;
-    case Texture_R11G11B10f:
-        glformat = GL_R11F_G11F_B10F;
-        // float formats use special higher-precision internal formats and don't do sRGB
-        internalFormat = glformat;
-        ovrFormat = OVR_FORMAT_R11G11B10_FLOAT;
-        break;
+
     case Texture_R:
         glformat = GL_RED;
         break;
@@ -1333,27 +1255,21 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
         break;
     case Texture_BC1:
         glformat = isSRGB ? GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT : GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
-        isCompressed = true;
         break;
     case Texture_BC2:
         glformat = isSRGB ? GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT : GL_COMPRESSED_RGBA_S3TC_DXT3_EXT;
-        isCompressed = true;
         break;
     case Texture_BC3:
         glformat = isSRGB ? GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT : GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
-        isCompressed = true;
         break;
     case Texture_BC6U:
         glformat = GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT_ARB;
-        isCompressed = true;
         break;
     case Texture_BC6S:
         glformat = GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT_ARB;
-        isCompressed = true;
         break;
     case Texture_BC7:
         glformat = isSRGB ? GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM_ARB : GL_COMPRESSED_RGBA_BPTC_UNORM_ARB;
-        isCompressed = true;
         break;
     default:
         OVR_FAIL();
@@ -1366,17 +1282,15 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
     }
 
     GLenum textureTarget = (samples > 1) ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D;
-	
-    if (format & Texture_Cubemap)
-    {
-        textureTarget = GL_TEXTURE_CUBE_MAP;
-        glEnable(GL_TEXTURE_CUBE_MAP);
-        isCubeMap = true;
-    }
 
     Texture* NewTex = new Texture(Session, this, format, width, height, samples);
+        
+    if (isSRGB)
+    {
+        internalFormat = GL_SRGB8_ALPHA8;
+    }
 
-	  if (((format & Texture_Compressed) != 0) && !(format & Texture_SwapTextureSet || format & Texture_SwapTextureSetStatic))
+    if (format & Texture_Compressed)
     {
         glGenTextures(1, &NewTex->TexId);
         glBindTexture(textureTarget, NewTex->GetTexId());
@@ -1391,51 +1305,40 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
             printf("RenderDevice::CreateTexture glGetError result: %d\n", err);
         }
 
-		    if (GLE_EXT_texture_compression_s3tc) // If compressed textures are supported (they typically are)...
-		    {
-			      int numFaces = isCubeMap ? 6 : 1;
+        if (GLE_EXT_texture_compression_s3tc) // If compressed textures are supported (they typically are)...
+    	{
+			const unsigned char* level = (const unsigned char*)data;
+			int w = width, h = height;
+			for (int i = 0; i < mipcount; i++)
+			{
+				int mipsize = GetTextureSize(format, w, h);
+				glCompressedTexImage2D(GL_TEXTURE_2D, i, glformat, w, h, 0, mipsize, level);
 
-			      for (int currFace = 0; currFace < numFaces; currFace++)
-			      {
-				        const unsigned char* level = (const unsigned char*)data;
-				        int w = width, h = height;
-				        for (int currMip = 0; currMip < mipcount; currMip++)
-				        {
-					          int mipsize = GetTextureSize(format, w, h);
-					          if (isCubeMap)
-					          {
-						            glCompressedTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + currFace, currMip, glformat, w, h, 0, mipsize, level);
-					          }
-					          else
-					          {
-						            glCompressedTexImage2D(GL_TEXTURE_2D, currMip, glformat, w, h, 0, mipsize, level);
-					          }
-					          w >>= 1;
-					          h >>= 1;
-					          if (w < 1) w = 1;
-					          if (h < 1) h = 1;
-					          level += mipsize;
-				        }
-			      }
-    	  }
-    	  else
-    	  {
-			      int w = width, h = height;
-			      unsigned char r = 64 + (rand() % (256 - 64));
+				level += mipsize;
+				w >>= 1;
+				h >>= 1;
+				if (w < 1) w = 1;
+				if (h < 1) h = 1;
+			}
+    	}
+    	else
+    	{
+			int w = width, h = height;
+			unsigned char r = 64 + (rand() % (256 - 64));
 
-			      for (int i = 0; i < mipcount; i++)
-			      {
-				        unsigned char* redData = new unsigned char[w * h];
-				        memset(redData, r, w * h);
-				        glTexImage2D(GL_TEXTURE_2D, i, GL_RED, w, h, 0, GL_RED, GL_UNSIGNED_BYTE, redData);
-				        delete[] redData;
+			for (int i = 0; i < mipcount; i++)
+			{
+			    unsigned char* redData = new unsigned char[w * h];
+	    		memset(redData, r, w * h);
+	            glTexImage2D(GL_TEXTURE_2D, i, GL_RED, w, h, 0, GL_RED, GL_UNSIGNED_BYTE, redData);
+	    		delete[] redData;
 
-				        w >>= 1;
-				        h >>= 1;
-				        if (w < 1) w = 1;
-				        if (h < 1) h = 1;
-			      }
-    	  }
+				w >>= 1;
+				h >>= 1;
+				if (w < 1) w = 1;
+				if (h < 1) h = 1;
+			}
+    	}
     }
     else
     {
@@ -1445,9 +1348,8 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
             desc.Width = width;
             desc.Height = height;
             desc.Format = ovrFormat;
-            desc.MirrorOptions = ConvertFormatToMirrorOptions(format);
-            ovrResult result = ovr_CreateMirrorTextureWithOptionsGL(Session, &desc, &NewTex->MirrorTexture);
 
+            ovrResult result = ovr_CreateMirrorTextureGL(Session, &desc, &NewTex->MirrorTexture);
             if (error != nullptr)
                 *error = result;
 
@@ -1468,45 +1370,17 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
             desc.ArraySize = 1;
             desc.Width = width;
             desc.Height = height;
-
-            if (format & Texture_GenMipmapsBySdk)
-            {
-                OVR_ASSERT((format & Texture_GenMipmaps) == 0);  // incompatible flags, use one or the other
-                mipcount = 1; // ignore mips requested by app
-                desc.MipLevels = 1;
-            }
-            else if (((format & Texture_GenMipmaps) != 0) && !isDepth)
-            {
-                if (samples > 1)
-                {
-                  desc.MipLevels = 1;
-                  OVR_FAIL(); // can't have mips with MSAA textures
-                }
-                else
-                {
-                  desc.MipLevels = mipcount > 1 ? mipcount : GetNumMipLevels(width, height);
-                }
-            }                
+            if (((format & Texture_GenMipmaps) != 0) && !isDepth)
+                desc.MipLevels = mipcount > 1 ? mipcount : GetNumMipLevels(width, height);
             else
-            {
                 desc.MipLevels = 1;
-            }
-            desc.SampleCount = samples;
+            desc.SampleCount = 1;
             desc.StaticImage = (format & Texture_SwapTextureSetStatic) ? 1 : 0;
             desc.Format = ovrFormat;
             desc.MiscFlags |= (format & Texture_Hdcp) ? ovrTextureMisc_ProtectedContent : 0;
 
-            if ((format & Texture_GenMipmapsBySdk) > 0 && !isCompressed)
-            {
-                desc.MiscFlags |= ovrTextureMisc_AutoGenerateMips;
-            }
-
-            if (isCubeMap)
-            {
-                desc.Type = ovrTexture_Cube;
-                desc.ArraySize = 6;
-            }
-
+            // Can do this with rendertargets, depth buffers, or normal textures, but *not* MSAA.
+            OVR_ASSERT ( samples == 1);
             ovrResult result = ovr_CreateTextureSwapChainGL(Session, &desc, &NewTex->TextureChain);
             if (error != nullptr)
                 *error = result;
@@ -1538,8 +1412,10 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
         {
             printf("RenderDevice::CreateTexture glGetError result: %d\n", err);
         }
-        
-        if ((format & Texture_Mirror) == 0)
+
+        if (samples > 1)
+            glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, samples, internalFormat, width, height, false);
+        else if ((format & Texture_Mirror) == 0)
         {
             int textureCount = 1;
             if (format & Texture_SwapTextureSet)
@@ -1569,14 +1445,7 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
                 // is not honored however, so we will need to initialize it with data later.
                 if (furtherInitialization)
                 {
-                    if (textureTarget == GL_TEXTURE_2D_MULTISAMPLE)
-                    {
-                        glTexImage2DMultisample(textureTarget, samples, internalFormat, width, height, true);
-                    }
-                    else
-                    {
-                        glTexImage2D(textureTarget, 0, internalFormat, width, height, 0, glformat, gltype, data);
-                    }
+                    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, glformat, gltype, data);
                 }
 
                 // For Nvidia, glTexImage2D cannot be called or an error will be thrown. Instead we initialize
@@ -1584,22 +1453,7 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
                 // hard, so we have to use glBlitFramebuffer from a non-shared texture to do the update.
                 if (((format & Texture_SwapTextureSet) || (format & Texture_SwapTextureSetStatic)) && data)
                 {
-                    int numFaces = isCubeMap ? 6 : 1;
-
-                    const unsigned char* charData = (const unsigned char*)data;
-                    int dataBlockSize = GetTextureSize(format, width, height);
-                    for (int faceIdx = 0; faceIdx < numFaces; faceIdx++)
-                    {
-                        if (isCubeMap)
-                        {
-                            glTexSubImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + faceIdx, 0, 0, 0, width, height, glformat, gltype, (const void*)charData);
-                        }
-                        else
-                        {
-                            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, glformat, gltype, data);
-                        }
-                        charData += dataBlockSize;
-                    }
+                    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, glformat, gltype, data);
                 }
             }
 
@@ -1608,21 +1462,10 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
             
     }
 
-	  if (isCubeMap) 
-	  {
-         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-		     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-		     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-		     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	  }
-	  else
-	  {
-		     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-		     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-		     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-		     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	  }
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
     if ((format & Texture_GenMipmaps) &&
         ((format & Texture_RenderTarget) == 0) &&   // not render target
@@ -1651,20 +1494,6 @@ Texture* RenderDevice::CreateTexture(uint64_t format, int width, int height, con
     else if (furtherInitialization)
     {
         glTexParameteri(textureTarget, GL_TEXTURE_MAX_LEVEL, mipcount - 1);
-    }
-    
-    if (format & Texture_SwapTextureSetStatic)
-    {
-        // We've already supplied data so commit this texture set now
-        ovr_CommitTextureSwapChain(Session, NewTex->TextureChain);
-    }
-
-    if (isCubeMap && (format & Texture_RenderTarget))
-    {
-        // Attach only the +X cubemap texture (for completeness)
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X, NewTex->GetTexId(), 0);
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
     }
 
     OVR_ASSERT(!glGetError());

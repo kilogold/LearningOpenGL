@@ -157,7 +157,7 @@ Texture* LoadTextureTgaEitherWay(RenderDevice* ren, File* f, int textureLoadFlag
         return NULL;
     }
 
-    uint64_t format = Texture_RGBA|Texture_GenMipmaps;
+    int format = Texture_RGBA|Texture_GenMipmaps;
     if (createSwapTextureSet)
     {
         format |= Texture_SwapTextureSetStatic;

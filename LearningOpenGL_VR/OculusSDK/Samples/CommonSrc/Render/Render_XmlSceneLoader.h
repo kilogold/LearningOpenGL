@@ -47,9 +47,7 @@ public:
                   std::vector<Ptr<CollisionModel> >* pCollisions,
                   std::vector<Ptr<CollisionModel> >* pGroundCollisions,
                   bool srgbAware = false,
-                  bool anisotropic = false,
-                  OVR::Render::BuiltinGeometryShaders geomShader = GShader_Disabled,
-                  bool heavyAluAndEarlyZ = false);
+                  bool anisotropic = false);
 
 protected:
     void ParseVectorString(const char* str, std::vector<OVR::Vector3f> *array,

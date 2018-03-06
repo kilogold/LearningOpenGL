@@ -27,7 +27,7 @@ limitations under the License.
 #ifndef Logging_OutputPlugins_h
 #define Logging_OutputPlugins_h
 
-#include "Logging_Library.h"
+#include "../include/Logging_Library.h"
 
 namespace ovrlog {
 
@@ -82,14 +82,8 @@ public:
     ~OutputEventLog();
 
 private:
-    #if defined(_WIN32)
-        typedef HANDLE EventSourceHandle;
-    #else
-        typedef void* EventSourceHandle;
-    #endif
-    
     // Event source handle initialized in constructor and used for logging
-    EventSourceHandle hEventSource;
+    HANDLE hEventSource;
     Level  MinReportEventLevel;
 
     virtual const char* GetUniquePluginName() override;

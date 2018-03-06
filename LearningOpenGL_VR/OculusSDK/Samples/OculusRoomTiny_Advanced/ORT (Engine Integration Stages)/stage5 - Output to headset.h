@@ -73,8 +73,8 @@
 
 #define STAGE5_DistortAndPresent     ovrViewScaleDesc viewScaleDesc;                                                                       \
                                      viewScaleDesc.HmdSpaceToWorldScaleInMeters = 1.0f;                                                    \
-                                     viewScaleDesc.HmdToEyePose[0] = HmdToEyePose[0];                                                  \
-                                     viewScaleDesc.HmdToEyePose[1] = HmdToEyePose[1];                                                  \
+                                     viewScaleDesc.HmdToEyeOffset[0] = HmdToEyeOffset[0];                                                  \
+                                     viewScaleDesc.HmdToEyeOffset[1] = HmdToEyeOffset[1];                                                  \
                                      ovrLayerEyeFov ld;                                                                                    \
                                      ld.Header.Type = ovrLayerType_EyeFov;                                                                 \
                                      ld.Header.Flags = 0;                                                                                  \

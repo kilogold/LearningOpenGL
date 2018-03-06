@@ -30,11 +30,12 @@ limitations under the License.
 #include <string>
 #include <thread>         // std::this_thread::sleep_for
 #include <chrono>         // std::chrono::seconds
-#include "Kernel/OVR_Log.h"
+
+#if defined(OVR_OS_MS)
+#include "OVR_CAPI_D3D.h"
+#endif
 
 
-// Use WaitFrame/BeginFrame/EndFrame in place of SubmitFrame
-#define USE_WAITFRAME 1
 
 OVR_DISABLE_MSVC_WARNING(4996) // "scanf may be unsafe"
 OVR_DISABLE_MSVC_WARNING(4351) // elements of array will be default initialize
@@ -42,17 +43,11 @@ OVR_DISABLE_MSVC_WARNING(4351) // elements of array will be default initialize
 
 
 
-#define DefaultWindowWidth 1100
-#define DefaultWindowHeight 618
-
-bool IsMixedRealityCaptureMode = false;
-
 Posef CockpitPanelPose[5];
 Vector2f CockpitPanelSize[5];
 Recti CockpitClipRect[5];
 int32_t HapticsMode = 0;
 const char* HapticsModeDesc[] = {
-    "[CONST] Off",
     "[CONST] Low-Latency:  per-touch (mid trigger) amplitude",
     "[BUFFR] Low-Latency:  per-touch (mid trigger) amplitude",
     "[BUFFR] High-Latency: per-touch (mid trigger) amplitude",
@@ -62,7 +57,6 @@ const char* HapticsModeDesc[] = {
     "[BUFFR] Low-Latency:  LR-touch 20 samples (ButtonA)",
     "[BUFFR] High-Latency: LR-touch 2 samples [0, 800ms] (ButtonA)",
     "[BUFFR] Low-Latency:  LR-touch 4 interleaved samples (ButtonA)",
-    "[BUFFR] Low-Latency:  Audio WAV playback (ButtonA)",
 };
 const int32_t kMaxHapticsModes = _countof(HapticsModeDesc);
 
@@ -84,20 +78,18 @@ const bool OculusWorldDemoApp::UseDepth[OculusWorldDemoApp::Rendertarget_LAST] =
     false, //Rendertarget_Menu
 };
 
-
-
 //-------------------------------------------------------------------------------------
 // ***** OculusWorldDemoApp
 
 OculusWorldDemoApp::OculusWorldDemoApp() :
     pRender(0),
     RenderParams(),
-    WindowSize(DefaultWindowWidth,DefaultWindowHeight),
+    WindowSize(1280,800),
     HmdDisplayAcquired(false),
     FirstScreenInCycle(0),
     SupportsSrgbSwitching(true),        // May be proven false below.
     SupportsMultisampling(true),        // May be proven false below.
-    SupportsDepthSubmit(true),         // May be proven false below.
+    SupportsDepthMultisampling(true),   // May be proven false below.
     ActiveGammaCurve(1.0f),
     SrgbGammaCurve(2.2f),
     MirrorIsSrgb(false),
@@ -106,6 +98,7 @@ OculusWorldDemoApp::OculusWorldDemoApp() :
     MenuUserEyeHeight(1.6f),    // initialized from profile later
 
     //RenderTargets()
+    //MsaaRenderTargets()
     //DrawEyeTargets(),
     Session(0),
     HmdDesc(),
@@ -124,8 +117,6 @@ OculusWorldDemoApp::OculusWorldDemoApp() :
     FPS(0.f),
     LastFpsUpdate(0.0),
     LastUpdate(0.0),
-
-    TouchHapticsPlayIndex(0),
 
     MainFilePath(),
     CollisionModels(),
@@ -147,9 +138,6 @@ OculusWorldDemoApp::OculusWorldDemoApp() :
     LastControllerType(ovrControllerType_None),
 
     ThePlayer(),
-    NumberOfCameras(MaxNumberOfCameras),
-    CurrentCameraID(-1),
-
     MainScene(),
     SmallGreenCube(),
     SmallOculusCube(),
@@ -168,9 +156,6 @@ OculusWorldDemoApp::OculusWorldDemoApp() :
     CockpitPanelTexture(),
 
     LoadingTexture(),
-
-    CubemapRenderTexture(),
-    CubemapLoadTexture(),
 
     HmdFrameTiming(),
     HmdStatus(0),
@@ -224,6 +209,7 @@ OculusWorldDemoApp::OculusWorldDemoApp() :
     TimewarpRenderIntervalInSeconds(0.0f),
     NeverRenderedIntoEyeTextures(false),
     FreezeEyeUpdate(false),
+    ComputeShaderEnabled(0),
 
 #ifdef OVR_OS_MS
     LayersEnabled(true),             // Use layers at all
@@ -249,14 +235,6 @@ OculusWorldDemoApp::OculusWorldDemoApp() :
     LayerHudMenuEnabled(true),
     LayerHudMenuHighQuality(false),
     LayerLoadingHighQuality(false),
-    LayerCubemap(Cubemap_Off),
-    LayerCubemapSaveOnRender(false),
-    LayerCubemapHighQuality(false),
-    LayerCylinderEnabled(false),
-    LayerCylinderHighQuality(false),
-    LayerCylinderRadius(1.0f),
-    LayerCylinderAspectRatio(1.0f),
-    LayerCylinderAngle(3.14159f),
 
     CenterPupilDepthMeters(0.05f),
     ForceZeroHeadMovement(false),
@@ -315,15 +293,6 @@ OculusWorldDemoApp::OculusWorldDemoApp() :
     DonutFloorVisual(false),
     ShowCalibratedOrigin(false),
     CalibratedTrackingOrigin(),
-    ProvidedTrackingOriginTranslationYaw(),
-
-    CurrentMirrorOptionStage(MirrorOptionStage_Rectilinear),
-    CurrentMirrorOptionEyes(MirrorOptionEyes_Both),
-    CurrentMirrorOptionCaptureGuardian(true),
-    CurrentMirrorOptionCaptureNotifications(true),
-    CurrentMirrorOptionCaptureSystemGui(false),
-    CurrentMirrorOptionsFormat(0),
-    MirrorOptionsChanged(false),
 
     Menu(),
     ShortcutChangeMessageEnable(true),
@@ -349,17 +318,12 @@ OculusWorldDemoApp::OculusWorldDemoApp() :
     OVR_ExceptionHandler.EnableReportPrivacy(true); // Dump less info?
     OVR_ExceptionHandler.Enable(true); // Enable handler
 
-
     EyeRenderSize[0] = EyeRenderSize[1] = Sizei(0);
 
     ViewFromWorld[0].SetIdentity();
     ViewFromWorld[1].SetIdentity();
 
-    CurrentMirrorOptionsFormat = ConvertMirrorOptionsToMirrorFormatFlags();
 
-
-    // Touch Haptics
-    memset(&TouchHapticsClip, 0, sizeof(TouchHapticsClip));
 
     for ( int i = 0; i < Rendertarget_LAST; i++ )
     {
@@ -422,15 +386,6 @@ OculusWorldDemoApp::OculusWorldDemoApp() :
                             EnvRenderModeAsLong, (unsigned long)Scene_OculusCubes);
         }
     }
-
-    const float cv1TexelsPerRadian = 802.20f;
-    const float cv1RadiansPerTexel = 1.0f / cv1TexelsPerRadian;
-    const float cylinderTexWidth   = 715.0f;
-    const float cylinderTexHeight  = 715.0f;
-
-    // 715x715 is the viewport width/height the target texture.
-    LayerCylinderAngle = cylinderTexWidth * cv1RadiansPerTexel;
-    LayerCylinderAspectRatio = cylinderTexWidth / cylinderTexHeight;
 }
 
 OculusWorldDemoApp::~OculusWorldDemoApp()
@@ -454,6 +409,8 @@ void OculusWorldDemoApp::DestroyRendering()
         {
             RenderTargets[i].pColorTex.Clear();
             RenderTargets[i].pDepthTex.Clear();
+            MsaaRenderTargets[i].pColorTex.Clear();
+            MsaaRenderTargets[i].pDepthTex.Clear();
         }
 
         for (size_t i = 0; i < OVR_ARRAY_COUNT(EyeTexture); ++i)
@@ -471,15 +428,13 @@ void OculusWorldDemoApp::DestroyRendering()
         HdcpTexture.Clear();
         TextureOculusCube.Clear();
         LoadingTexture.Clear();
-        CubemapRenderTexture.Clear();
-        CubemapLoadTexture.Clear();
 
         OculusRoundFloor[0].Clear();
-        OculusRoundFloor[1].Clear();
-        pRoundFloorModel[0].Clear();
+		OculusRoundFloor[1].Clear();
+		pRoundFloorModel[0].Clear();
         pRoundFloorModel[1].Clear();
 
-        PositionalTracker.Clear();
+		PositionalTracker.Clear();
 
         pPlatform->DestroyGraphics();
         pRender = nullptr;
@@ -508,7 +463,6 @@ int OculusWorldDemoApp::OnStartup(int argc, const char** argv)
     Argv = argv;
 
     OVR::Thread::SetCurrentThreadName("OWDMain");
-
 
 
     // *** Oculus HMD Initialization
@@ -545,13 +499,8 @@ int OculusWorldDemoApp::OnStartup(int argc, const char** argv)
     }
 
 
-    // Declare that we are aware of focus functionality. This means we need to keep drawing when we
-    // lose focus, but trying to simulate and handle input, and hide any representation of hands.
-    params.Flags |= ovrInit_FocusAware;
-
     params.LogCallback = LogCallback;
     ovrResult error = ovr_Initialize(&params);
-
 
     ovr_TraceMessage(ovrLogLevel_Info, "Oculus World Demo OnStartup");
 
@@ -566,16 +515,11 @@ int OculusWorldDemoApp::OnStartup(int argc, const char** argv)
         ovr_SetString( nullptr, "server:replayInit", replayFile.c_str() );
     }
 
-    int res = InitializeRendering(true);
-
-
-    return res;
+    return InitializeRendering(true);
 }
 
 int OculusWorldDemoApp::InitializeRendering(bool firstTime)
 {
-    OVR_ASSERT(!HmdDisplayAcquired);
-
     ovrGraphicsLuid luid;
     ovrResult error = ovr_Create(&Session, &luid);
 
@@ -593,6 +537,8 @@ int OculusWorldDemoApp::InitializeRendering(bool firstTime)
         }
     }
 
+    HmdDisplayAcquired = true;
+
 
     // Did we end up with a debug HMD?
     HmdDesc = ovr_GetHmdDesc(Session);
@@ -601,7 +547,8 @@ int OculusWorldDemoApp::InitializeRendering(bool firstTime)
 
     // In Direct App-rendered mode, we can use smaller window size,
     // as it can have its own contents and isn't tied to the buffer.
-    WindowSize = Sizei(DefaultWindowWidth, DefaultWindowHeight);//Sizei(960, 540); avoid rotated output bug.
+    WindowSize = Sizei(1100, 618);//Sizei(960, 540); avoid rotated output bug.
+
 
     // ***** Setup System Window & rendering.
 
@@ -610,14 +557,12 @@ int OculusWorldDemoApp::InitializeRendering(bool firstTime)
         if (firstTime)
         {
             DisplayLastErrorMessageBox("Unable to initialize rendering");
-            DestroyRendering();
             return 1;
         }
         else
         {
             HmdDisplayAcquired = false;
             GetPlatformCore()->SetNotificationOverlay(0, 28, 8, "Unable to initialize rendering");
-            DestroyRendering();
             return 0;
         }
     }
@@ -634,7 +579,6 @@ int OculusWorldDemoApp::InitializeRendering(bool firstTime)
         if (firstTime)
         {
             DisplayLastErrorMessageBox("Unable to initialize rendering");
-            DestroyRendering();
             return 1;
         }
         else
@@ -643,9 +587,6 @@ int OculusWorldDemoApp::InitializeRendering(bool firstTime)
 
             // Destroy what was initialized
             HandleOvrError(error);
-
-            DestroyRendering();
-
             return 0;
         }
     }
@@ -683,27 +624,6 @@ int OculusWorldDemoApp::InitializeRendering(bool firstTime)
     InitMainFilePath();
     PopulatePreloadScene();
 
-    // Load Haptics audio WAV file
-    FILE* file = fopen("./song1.wav", "rb");
-    if (file != nullptr)
-    {
-        // Read all WAV file data
-        fseek(file, 0, SEEK_END);
-        int32_t fileSize = ftell(file);
-        fseek(file, 0, SEEK_SET);
-        std::unique_ptr<uint8_t[]> wavData(new uint8_t[fileSize]);
-        fread(wavData.get(), fileSize, 1, file);
-
-        // Get audio channel data
-        ovrAudioChannelData channelData;
-        ovr_ReadWavFromBuffer(&channelData, wavData.get(), fileSize, 0);
-
-        // Generate haptics data from audio channel
-        ovr_GenHapticsFromAudioData(&TouchHapticsClip, &channelData, ovrHapticsGenMode_PointSample);
-        ovr_ReleaseAudioChannelData(&channelData);
-    }
-
-
     SetCommandLineMenuOption(Argc, Argv);
 
     LastUpdate = ovr_GetTimeInSeconds();
@@ -714,7 +634,6 @@ int OculusWorldDemoApp::InitializeRendering(bool firstTime)
     //OVR_ASSERT ( pCockpitLayerList == nullptr );
     //pCockpitLayerList = ovr_CreateLayerList ( Session );
 
-    HmdDisplayAcquired = true;
 
     return 0;
 }
@@ -793,7 +712,6 @@ bool OculusWorldDemoApp::SetupWindowAndRendering(bool firstTime, int argc, const
     const char* graphics = "GL";
 #endif
 
-
     // Select renderer based on command line arguments.
     // Example usage: App.exe -r d3d9 -fs
     // Example usage: App.exe -r GL
@@ -851,7 +769,13 @@ bool OculusWorldDemoApp::SetupWindowAndRendering(bool firstTime, int argc, const
     pPlatform->SetWindowTitle(title);
 
     SrgbRequested = ShouldLoadedTexturesBeSrgb(EyeTextureFormat);
-    
+
+    if (RenderParams.RenderAPI == RenderAPI_OpenGL)
+    {
+        // Right now, even though ovr_CreateTextureSwapChainGL can create MSAA depth textures, GL doesn't like to bind them
+        SupportsDepthMultisampling = false;
+    }
+
     // Ideally we would use the created OpenGL context to determine multisamping support,
     // but that creates something of a chicken-and-egg problem which is easier to solve in
     // practice by the code below, as it's the only case where multisamping isn't supported
@@ -1016,7 +940,6 @@ void OculusWorldDemoApp::PopulateOptionMenu()
         //AddEnumValue("BGRA8",       EyeTextureFormat_BGRA8).
         //AddEnumValue("BGRX8",       EyeTextureFormat_BGRX8).
         AddEnumValue("RGBA16F",     EyeTextureFormat_RGBA16F).
-        AddEnumValue("R11G11B10F",  EyeTextureFormat_R11G11B10F).
         AddEnumValue("RGBA8_SRGB",  EyeTextureFormat_RGBA8_SRGB).
         //AddEnumValue("BGRA8_SRGB",  EyeTextureFormat_BGRA8_SRGB).
         //AddEnumValue("BGRX8_SRGB",  EyeTextureFormat_BGRX8_SRGB).
@@ -1045,9 +968,6 @@ void OculusWorldDemoApp::PopulateOptionMenu()
                                                         AddEnumValue("Far < Near & Far Clip at infinity", FarLessThanNearAndInfiniteFarClip).
                                                         SetNotify(this, &OWD::HmdSettingChange);
 
-
-
-
     Menu.AddBool( "Timewarp.Freeze Eye Update 'C'",         &FreezeEyeUpdate).AddShortcutKey(Key_C);
     Menu.AddBool( "Timewarp.Render Interval Enabled 'I'",   &TimewarpRenderIntervalEnabled).AddShortcutKey(Key_I);
     Menu.AddFloat("Timewarp.Render Interval",               &TimewarpRenderIntervalInSeconds,
@@ -1058,7 +978,7 @@ void OculusWorldDemoApp::PopulateOptionMenu()
     Menu.AddBool( "Layers.Layers Enabled 'Shift+L'",      &LayersEnabled).AddShortcutKey(Key_L, ShortcutKey::Shift_RequireOn).SetNotify(this, &OWD::HmdSettingChange);
     // Layer 0 is the main scene - can't turn it off!
     Menu.AddBool( "Layers.Main Layer HQ",           &Layer0HighQuality).SetNotify(this, &OWD::HmdSettingChange);
-    Menu.AddInt(  "Layers.Main Layer Gen-Mips (0=SDK-gen)",  &Layer0GenMipCount, 0, 12).SetNotify(this, &OWD::HmdSettingChange);
+    Menu.AddInt(  "Layers.Main Layer Gen-Mips (0=all, 1=off)",  &Layer0GenMipCount, 0, 12).SetNotify(this, &OWD::HmdSettingChange);
     Menu.AddBool( "Layers.World Layer Enabled",     &Layer1Enabled);
     Menu.AddBool( "Layers.World Layer HQ",          &Layer1HighQuality);
     Menu.AddBool( "Layers.Torso Layer Enabled",     &Layer2Enabled);
@@ -1072,30 +992,16 @@ void OculusWorldDemoApp::PopulateOptionMenu()
     Menu.AddInt ( "Layers.Cockpit Enable Bitfield", &LayerCockpitEnabled, 0, 31, 1);
     Menu.AddBool( "Layers.Cockpit HighQuality",     &LayerCockpitHighQuality);
     Menu.AddBool( "Layers.HUD/Menu HighQuality",    &LayerHudMenuHighQuality);
-    Menu.AddBool( "Layers.Cylinder.Enabled",        &LayerCylinderEnabled);
-    Menu.AddBool( "Layers.Cylinder.HQ",             &LayerCylinderHighQuality);
-    Menu.AddFloat("Layers.Cylinder.Radius",         &LayerCylinderRadius, 0.0f, 5.0f, 0.05f);
-    Menu.AddFloat("Layers.Cylinder.Aspect Ratio",   &LayerCylinderAspectRatio, 0.01f, 10.0f, 0.05f);
-    // 0.2 is subtracted off the angular range because the non-double-sided cylinder
-    // exhibits artifacts at larger angles.
-    Menu.AddFloat("Layers.Cylinder.Angle",          &LayerCylinderAngle, 0.01f, 2.0f*3.1415926f - 0.2f, 0.05f);
 
-    Menu.AddEnum("Layers.Cubemap", &LayerCubemap).
-        AddEnumValue("Disabled", Cubemap_Off).
-        AddEnumValue("Rendered", Cubemap_Render).
-        AddEnumValue("Texture", Cubemap_Load);
-    Menu.AddBool("Layers.Layer Cubemap Save on Render", &LayerCubemapSaveOnRender);
-    Menu.AddBool("Layers.Cubemap HQ", &LayerCubemapHighQuality);
 
     // Test pattern menu.
 
 
     // Player menu
-    Menu.AddBool("Player.Seat Level.Visualize Floor 'O'", &VisualizeSeatLevel).AddShortcutKey(Key_O);
-    Menu.AddBool("Player.Seat Level.Sitting Auto Switch 'Shift+O'", &SittingAutoSwitch).AddShortcutKey(Key_O, ShortcutKey::Shift_RequireOn);
+	Menu.AddBool("Player.Seat Level.Visualize Floor 'O'", &VisualizeSeatLevel).AddShortcutKey(Key_O);
+	Menu.AddBool("Player.Seat Level.Sitting Auto Switch 'Shift+O'", &SittingAutoSwitch).AddShortcutKey(Key_O, ShortcutKey::Shift_RequireOn);
     Menu.AddBool("Player.Seat Level.Sitting State",					&Sitting);
     Menu.AddBool("Player.Seat Level.Donut Floor Visual",			&DonutFloorVisual);
-
 
     Menu.AddEnum("Player.Tracking Origin", &TrackingOriginType).AddEnumValue("Eye Level", ovrTrackingOrigin_EyeLevel).
                                                                 AddEnumValue("Floor Level", ovrTrackingOrigin_FloorLevel).
@@ -1119,14 +1025,8 @@ void OculusWorldDemoApp::PopulateOptionMenu()
 
     Menu.AddBool("Player.Show Calibrated Tracking Origin",   &ShowCalibratedOrigin);
 
-    Menu.AddFloat(  "Player.Specified Tracking Origin.Move X (m)",    &ProvidedTrackingOriginTranslationYaw.x, -10.0f, 10.0f, 0.01f);
-    Menu.AddFloat(  "Player.Specified Tracking Origin.Move Y (m)",    &ProvidedTrackingOriginTranslationYaw.y, -10.0f, 10.0f, 0.01f);
-    Menu.AddFloat(  "Player.Specified Tracking Origin.Move Z (m)",    &ProvidedTrackingOriginTranslationYaw.z, -10.0f, 10.0f, 0.01f);
-    Menu.AddFloat(  "Player.Specified Tracking Origin.Yaw (degrees)", &ProvidedTrackingOriginTranslationYaw.w, -180.0f, 180.0f, 1.0f);
-    Menu.AddTrigger("Player.Specified Tracking Origin.Apply Tracking Origin").SetNotify(this, &OWD::SpecifyTrackingOrigin);
-
     // Tracking menu
-	Menu.AddTrigger("Tracking.Recenter Tracking Origin 'R'").AddShortcutKey(Key_R).SetNotify(this, &OWD::ResetHmdPose);
+	Menu.AddTrigger("Tracking.Recenter HMD Pose 'R'").AddShortcutKey(Key_R).SetNotify(this, &OWD::ResetHmdPose);
 	Menu.AddBool("Tracking.Visualize Tracker", &VisualizeTracker);
 
 
@@ -1135,17 +1035,6 @@ void OculusWorldDemoApp::PopulateOptionMenu()
     Menu.AddInt("Display.Mirror Window.Width",       &WindowSize.w, 100, 4000).SetNotify(this, &OWD::WindowSizeChange);
     Menu.AddInt("Display.Mirror Window.Height",      &WindowSize.h, 100, 4000).SetNotify(this, &OWD::WindowSizeChange);
     Menu.AddTrigger("Display.Mirror Window.Set To Native HMD Res").SetNotify(this, &OWD::WindowSizeToNativeResChange);
-
-    Menu.AddEnum("Display.Mirror Window.Type",       &CurrentMirrorOptionStage).
-        AddEnumValue("Rectilinear", MirrorOptionStage_Rectilinear).
-        AddEnumValue("Post Distortion", MirrorOptionStage_PostDistortion).SetNotify(this, &OWD::MirrorSettingChange);
-    Menu.AddEnum("Display.Mirror Window.Rectilinear.Eye",       &CurrentMirrorOptionEyes).
-        AddEnumValue("Both", MirrorOptionEyes_Both).
-        AddEnumValue("Left-Only", MirrorOptionEyes_LeftOnly).
-        AddEnumValue("Right-Only", MirrorOptionEyes_RightOnly).SetNotify(this, &OWD::MirrorSettingChange);
-    Menu.AddBool("Display.Mirror Window.Rectilinear.Capture Guardian", &CurrentMirrorOptionCaptureGuardian).SetNotify(this, &OWD::MirrorSettingChange);
-    Menu.AddBool("Display.Mirror Window.Rectilinear.Capture Notifications", &CurrentMirrorOptionCaptureNotifications).SetNotify(this, &OWD::MirrorSettingChange);
-    Menu.AddBool("Display.Mirror Window.Rectilinear.Capture System GUI", &CurrentMirrorOptionCaptureSystemGui).SetNotify(this, &OWD::MirrorSettingChange);
 
     Menu.AddEnum( "Display.Border Clear Color",      &DistortionClearBlue).
                                                       SetNotify(this, &OWD::DistortionClearColorChange).
@@ -1189,7 +1078,6 @@ void OculusWorldDemoApp::PopulateOptionMenu()
                                                                 AddEnumValue("Latency Timing", ovrPerfHud_LatencyTiming).
                                                                 AddEnumValue("App Render Timing", ovrPerfHud_AppRenderTiming).
                                                                 AddEnumValue("Comp Render Timing", ovrPerfHud_CompRenderTiming).
-                                                                AddEnumValue("ASW Stats", ovrPerfHud_AswStats).
                                                                 AddEnumValue("Version Info", ovrPerfHud_VersionInfo).
                                                                 AddShortcutKey(Key_F11).
                                                                 SetNotify(this, &OWD::PerfHudSettingChange);
@@ -1279,6 +1167,25 @@ static Sizei RoundToMultiple(Sizei dims, uint32_t multiple)
     return dims;
 }
 
+static uint32_t NextHighestPow2(uint32_t n)
+{
+    n--;
+    n |= n >> 1;
+    n |= n >> 2;
+    n |= n >> 4;
+    n |= n >> 8;
+    n |= n >> 16;
+    return n + 1;
+}
+
+static Sizei NextHighestPow2(Sizei dims)
+{
+    OVR_ASSERT(dims.w >= 0 && dims.h >= 0);
+    dims.w = (int32_t)NextHighestPow2((uint32_t)dims.w);
+    dims.h = (int32_t)NextHighestPow2((uint32_t)dims.h);
+    return dims;
+}
+
 ovrResult OculusWorldDemoApp::CalculateHmdValues()
 {
     MultisampleEnabled = MultisampleRequested;
@@ -1286,9 +1193,9 @@ ovrResult OculusWorldDemoApp::CalculateHmdValues()
     {
         MultisampleEnabled = false;
     }
-    if(!SupportsDepthSubmit)
+    if ( !SupportsDepthMultisampling && Layer0Depth )
     {
-        Layer0Depth = false;
+        MultisampleEnabled = false;
     }
     if ( GridDisplayMode == GridDisplay_GridDirect )
     {
@@ -1359,11 +1266,9 @@ ovrResult OculusWorldDemoApp::CalculateHmdValues()
         //  2) Uses only the Left texture for rendering.
         //  (it also plays with IPD and/or player scaling, but that is done elsewhere)
 
-        g_EyeFov[0] = FovPort::Uncant(g_EyeFov[0], EyeRenderDesc[0].HmdToEyePose.Orientation);
-        g_EyeFov[1] = FovPort::Uncant(g_EyeFov[1], EyeRenderDesc[1].HmdToEyePose.Orientation);
         g_EyeFov[0] = FovPort::Max(g_EyeFov[0], g_EyeFov[1]);
         g_EyeFov[1] = g_EyeFov[0];
-        
+
         Sizei recommenedTexSize = ovr_GetFovTextureSize(Session, ovrEye_Left, g_EyeFov[0], DesiredPixelDensity);
 
         Sizei textureSize = EnsureRendertargetAtLeastThisBig(Rendertarget_Left, recommenedTexSize, (Layer0GenMipCount != 1), Layer0GenMipCount, error);
@@ -1462,14 +1367,22 @@ ovrResult OculusWorldDemoApp::CalculateHmdValues()
     // Select the MSAA or non-MSAA version of each render target
     for (int rtIdx = 0; rtIdx < Rendertarget_LAST; rtIdx++)
     {
-        DrawEyeTargets[rtIdx] = &RenderTargets[rtIdx];
+        DrawEyeTargets[rtIdx] = (MultisampleEnabled && SupportsMultisampling && AllowMsaaTargets[rtIdx]) ?
+            &MsaaRenderTargets[rtIdx] :
+            &RenderTargets[rtIdx];
     }
 
-	  // Call ovr_GetRenderDesc each frame to get the ovrEyeRenderDesc, as the returned values (e.g. HmdToEyePose) may change at runtime.
+	// Call ovr_GetRenderDesc each frame to get the ovrEyeRenderDesc, as the returned values (e.g. HmdToEyeOffset) may change at runtime.
     EyeRenderDesc[0] = ovr_GetRenderDesc(Session, ovrEye_Left, g_EyeFov[0]);
     EyeRenderDesc[1] = ovr_GetRenderDesc(Session, ovrEye_Right, g_EyeFov[1]);
 
-    unsigned int projectionModifier = createProjectionModifier();
+    bool flipZ = DepthModifier != NearLessThanFar;
+    bool farAtInfinity = DepthModifier == FarLessThanNearAndInfiniteFarClip;
+
+    unsigned int projectionModifier = ovrProjection_None;
+    projectionModifier |= (RenderParams.RenderAPI == RenderAPI_OpenGL) ? ovrProjection_ClipRangeOpenGL : 0;
+    projectionModifier |= flipZ ? ovrProjection_FarLessThanNear : 0;
+    projectionModifier |= farAtInfinity ? ovrProjection_FarClipAtInfinity : 0;
 
     // Calculate projections
     Projection[0] = ovrMatrix4f_Projection(EyeRenderDesc[0].Fov, NearClip, FarClip, projectionModifier);
@@ -1494,7 +1407,6 @@ bool OculusWorldDemoApp::ShouldLoadedTexturesBeSrgb(EyeTextureFormatOpt eyeTextu
     //case EyeTextureFormat_BGRA8_SRGB:   // fall-thru
     //case EyeTextureFormat_BGRX8_SRGB:   // fall-thru
     case EyeTextureFormat_RGBA16F:      return true;    // works as if it's an sRGB format
-    case EyeTextureFormat_R11G11B10F:   return true;    // works as if it's an sRGB format
 
     //case EyeTextureFormat_B5G6R5:       // fall-thru
     //case EyeTextureFormat_BGR5A1:       // fall-thru
@@ -1522,7 +1434,6 @@ int OculusWorldDemoApp::GetRenderDeviceTextureFormatForEyeTextureFormat(EyeTextu
     //case EyeTextureFormat_BGRX8:        return Texture_BGRX;
     //case EyeTextureFormat_BGRX8_SRGB:   return Texture_BGRX | Texture_SRGB;
     case EyeTextureFormat_RGBA16F:      return Texture_RGBA16f;
-    case EyeTextureFormat_R11G11B10F:   return Texture_R11G11B10f;
     }
 
     OVR_FAIL();
@@ -1530,8 +1441,7 @@ int OculusWorldDemoApp::GetRenderDeviceTextureFormatForEyeTextureFormat(EyeTextu
 }
 
 // Returns the actual size present.
-// genMipCount == 0 generates mips by the SDK
-// genMipCount > 1 generates mips by OWD.
+// genMipCount == 0 generates all mips
 Sizei OculusWorldDemoApp::EnsureRendertargetAtLeastThisBig(int rtNum, Sizei requestedSize, bool genMips, int genMipCount, ovrResult& error)
 {
     OVR_ASSERT((rtNum >= 0) && (rtNum < Rendertarget_LAST));
@@ -1541,6 +1451,7 @@ Sizei OculusWorldDemoApp::EnsureRendertargetAtLeastThisBig(int rtNum, Sizei requ
     Sizei newRTSize;
 
     RenderTarget& rt = RenderTargets[rtNum];
+    RenderTarget& msrt = MsaaRenderTargets[rtNum];
     if (!rt.pColorTex)
     {
         // Hmmm... someone nuked my texture. Rez change or similar. Make sure we reallocate.
@@ -1571,7 +1482,11 @@ Sizei OculusWorldDemoApp::EnsureRendertargetAtLeastThisBig(int rtNum, Sizei requ
     // in both dimensions or the results won't look as sexy
     if (genMips)
     {
-        if (genMipCount > 1)
+        if (genMipCount == 0)
+        {
+            newRTSize = NextHighestPow2(newRTSize);
+        }
+        else if (genMipCount > 1)
         {
             // limit mip count to a logical value given the RTs dimensions
             int maxMipCount = Render::GetNumMipLevels(newRTSize.w, newRTSize.h);
@@ -1589,7 +1504,7 @@ Sizei OculusWorldDemoApp::EnsureRendertargetAtLeastThisBig(int rtNum, Sizei requ
 
     int allocatedDepthFormat = (rt.pDepthTex != NULL ? rt.pDepthTex->GetFormat() & Texture_DepthMask : 0);
 
-    uint64_t desiredDepthFormat = Texture_Depth32f;
+    int desiredDepthFormat = Texture_Depth32f;
     switch (DepthFormatOption)
     {
     case DepthFormatOption_D32f:    desiredDepthFormat = Texture_Depth32f; break;
@@ -1600,63 +1515,79 @@ Sizei OculusWorldDemoApp::EnsureRendertargetAtLeastThisBig(int rtNum, Sizei requ
     }
     bool depthFormatChanged = UseDepth[rtNum] && (allocatedDepthFormat != desiredDepthFormat);
 
+    bool requestGenMips = ((genMipCount == 0) || (genMipCount > 1));
+
     // Does that require actual reallocation?
     if (currentSize != newRTSize ||
         depthFormatChanged ||
         genMipCount != GenMipCount[rtNum])
     {
-        GenMipCount[rtNum] = genMipCount;
-
         desiredDepthFormat |= Texture_SampleDepth;
-        uint64_t colorFormat = GetRenderDeviceTextureFormatForEyeTextureFormat(EyeTextureFormat);
+        int colorFormat = GetRenderDeviceTextureFormatForEyeTextureFormat(EyeTextureFormat);
         colorFormat |= Texture_RenderTarget;
 
         // We need to render at least one frame to the newly-allocated texture, otherwise we just get junk.
         NeverRenderedIntoEyeTextures = true;
 
-        bool willUseMsaa = MultisampleEnabled && SupportsMultisampling && AllowMsaaTargets[rtNum];
-        int msaaRate = willUseMsaa ? 4 : 1;
+        GenMipCount[rtNum] = genMipCount;
+        int genMipsFlag = requestGenMips ? Texture_GenMipmaps : 0;
 
-        int genMipsFlag = 0;
-
-        // In OWD, mip count == 0 means let the SDK generate the mips
-        if (genMipCount == 0) {
-          genMipsFlag = Texture_GenMipmapsBySdk;
-          genMipCount = 1; // SDK will be generating the mips so we clear it here
-        }
-
-        if (willUseMsaa)
-        {
-            genMipCount = 0;  // we can't gen mips on MSAA textures unless done by the SDK (above)
-        }
-        else if (genMipCount > 1)
-        {
-            genMipsFlag = Texture_GenMipmaps;
-        }
-        
-        // Now create the textures, color first, then depth
-        rt.pColorTex = *pRender->CreateTexture(colorFormat | msaaRate | genMipsFlag | Texture_SwapTextureSet,
-                                                newRTSize.w, newRTSize.h, NULL, genMipCount, &error);
-
+        rt.pColorTex = *pRender->CreateTexture(colorFormat | genMipsFlag | Texture_SwapTextureSet, newRTSize.w, newRTSize.h, NULL, genMipCount, &error);
         if (HandleOvrError(error))
             return Sizei(0, 0);
 
         rt.pColorTex->SetSampleMode(Sample_ClampBorder | Sample_Linear);
 
-        if (UseDepth[rtNum] && Layer0Depth)
+        // Subtlety - do NOT test MultisampleEnabled. What can happen is we come in here with MSAA off,
+        // allocate a larger texture, then turn MSAA on, and it says "the texture size didn't change",
+        // but we don't have an MSAA version allocated.
+        if (SupportsMultisampling && AllowMsaaTargets[rtNum])
         {
-            rt.pDepthTex = *pRender->CreateTexture(desiredDepthFormat | msaaRate | Texture_SwapTextureSet,
-                                                    newRTSize.w, newRTSize.h, NULL, 1, &error);
+            int msaaRate = 4;
+
+            msrt.pColorTex = *pRender->CreateTexture(colorFormat | msaaRate, newRTSize.w, newRTSize.h, NULL, 1, &error);
             if (HandleOvrError(error))
                 return Sizei(0, 0);
 
-            rt.pDepthTex->SetSampleMode(Sample_ClampBorder | Sample_Linear);
+            msrt.pColorTex->SetSampleMode(Sample_ClampBorder | Sample_Linear);
+
+            if (UseDepth[rtNum] && SupportsDepthMultisampling)
+            {
+                msrt.pDepthTex = *pRender->CreateTexture(desiredDepthFormat | msaaRate |
+                    (Layer0Depth ? Texture_SwapTextureSet : 0), newRTSize.w, newRTSize.h, NULL, 1, &error);
+                if (HandleOvrError(error))
+                    return Sizei(0, 0);
+
+                msrt.pDepthTex->SetSampleMode(Sample_ClampBorder | Sample_Linear);
+            }
+            else
+            {
+                msrt.pDepthTex = nullptr;
+            }
+        }
+
+        if (UseDepth[rtNum])
+        {
+            // When actually using MSAA, we want to pass the MSAA depth buffer to the compositor
+            // Otherwise we just create our non-MSAA depth buffer as usual
+            if (MultisampleEnabled && SupportsMultisampling && SupportsDepthMultisampling && AllowMsaaTargets[rtNum])
+            {
+                rt.pDepthTex = msrt.pDepthTex;
+            }
+            else
+            {
+                rt.pDepthTex = *pRender->CreateTexture(desiredDepthFormat | genMipsFlag |
+                    (Layer0Depth ? Texture_SwapTextureSet : 0), newRTSize.w, newRTSize.h, NULL, 1, &error);
+                if (HandleOvrError(error))
+                    return Sizei(0, 0);
+
+                rt.pDepthTex->SetSampleMode(Sample_ClampBorder | Sample_Linear);
+            }
         }
         else
         {
-            rt.pDepthTex = nullptr; // it will be created and assigned on SetRenderTarget
+            rt.pDepthTex = nullptr;
         }
-
     }
 
     return newRTSize;
@@ -1668,13 +1599,9 @@ Sizei OculusWorldDemoApp::EnsureRendertargetAtLeastThisBig(int rtNum, Sizei requ
 
 void OculusWorldDemoApp::OnResize(int width, int height)
 {
-    // Do not resize if in the mixed reality capture mode
-    if (!IsMixedRealityCaptureMode)
-    {
-        WindowSize = Sizei(width, height);
-        HmdSettingsChanged = true;
-        WindowSizeChange();
-    }
+    WindowSize = Sizei(width, height);
+    HmdSettingsChanged = true;
+    WindowSizeChange();
 }
 
 void OculusWorldDemoApp::OnMouseMove(int x, int y, int modifiers)
@@ -1694,29 +1621,6 @@ void OculusWorldDemoApp::OnMouseMove(int x, int y, int modifiers)
 
 void OculusWorldDemoApp::OnKey(OVR::KeyCode key, int chr, bool down, int modifiers)
 {
-    switch (key)
-    {
-    case Key_F6:
-        if (!down)
-        {
-            IsMixedRealityCaptureMode = !IsMixedRealityCaptureMode;
-            if (IsMixedRealityCaptureMode)
-                IsMixedRealityCaptureMode = SetupMixedRealityCapture();
-            if (!IsMixedRealityCaptureMode)
-                CleanupMixedRealityCapture();
-        }
-        return;
-
-    case Key_F7:
-        if (!down)
-        {
-            // 0: none 1: hands 2: touches  3: both
-            // cycles through 0->1->2->3
-            RenderControllerFlag = RenderControllerType((RenderControllerFlag + 1) % RenderController_Count);
-        }
-        return;
-    }
-
 
     if (Menu.OnKey(key, chr, down, modifiers))
         return;
@@ -1867,7 +1771,6 @@ void OculusWorldDemoApp::FlushIfApplicable(DrawFlushModeEnum flushMode, int& cur
     }
 }
 
-
 void OculusWorldDemoApp::HandleBoundaryControls()
 {
     // Check if Touch B button was pressed to activate menu
@@ -1926,7 +1829,7 @@ void OculusWorldDemoApp::HandleBoundaryControls()
     }
 }
 
-void OculusWorldDemoApp::HandleHaptics()
+void handleHaptics(ovrSession Session, const ovrInputState LastInputState, const ovrInputState InputState)
 {
     // The hardware Haptics engine oscillates at 320hz (3.125ms per-sample)
     // The engine can queue up to 256 samples (800ms), longer queue yields higher latency
@@ -1976,10 +1879,8 @@ void OculusWorldDemoApp::HandleHaptics()
         // Multiple haptics modes to test
         switch (HapticsMode)
         {
-        case 0:
-            continue;
         // Constant Vibration
-        case 1:
+        case 0:
             if (lastHandTrigger[t] == 0.0f && handTrigger[t] == 0.0f)
                 continue;
 
@@ -1988,10 +1889,10 @@ void OculusWorldDemoApp::HandleHaptics()
         break;
 
         // Low-latency, Short-queue, per-touch amplitude sent by the Hand Trigger
-        case 2:
+        case 1:
             if (handTrigger[t] == 0.0f)
                 continue;
-            amplitude = (uint8_t)std::min(255, (int32_t)round(handTrigger[t] * 255) + 8);
+            amplitude = (uint8_t)round(handTrigger[t] * 255) + 9;
 
             result = ovr_GetControllerVibrationState(Session, touchController[t], &state);
             if (result != ovrSuccess || state.SamplesQueued >= kLowLatencyBufferSizeInSamples)
@@ -2005,10 +1906,10 @@ void OculusWorldDemoApp::HandleHaptics()
         break;
 
         // High-latency, Long-queue, per-touch amplitude sent by the Hand Trigger
-        case 3:
+        case 2:
             if (handTrigger[t] == 0.0f)
                 continue;
-            amplitude = (uint8_t)std::min(255, (int32_t)round(handTrigger[t] * 255) + 8);
+            amplitude = (uint8_t)round(handTrigger[t] * 255) + 9;
 
             result = ovr_GetControllerVibrationState(Session, touchController[t], &state);
             if (result != ovrSuccess)
@@ -2021,7 +1922,7 @@ void OculusWorldDemoApp::HandleHaptics()
             break;
 
         // Low-latency, short-queue, both-touches increase mod amplitude
-        case 4:
+        case 3:
             if (!buttonPressed_A)
                 continue;
 
@@ -2041,28 +1942,28 @@ void OculusWorldDemoApp::HandleHaptics()
             break;
 
         // Low latency 1 click SHORT
-        case 5:
+        case 4:
             if (!wasButtonPressed_A && buttonPressed_A)
                 for (int32_t i = 0; i < 1; ++i)
                     samples.push_back(255);
             break;
 
         // Low latency 1 click LONG
-        case 6:
+        case 5:
             if (!wasButtonPressed_A && buttonPressed_A)
                 for (int32_t i = 0; i < 4; ++i)
                     samples.push_back(255);
             break;
 
         // Full Package
-        case 7:
+        case 6:
             if (!wasButtonPressed_A && buttonPressed_A)
                 for (int32_t i = 0; i < 20; ++i)
                     samples.push_back(255);
             break;
 
         // First and Last buffer samples
-        case 8:
+        case 7:
             if (!wasButtonPressed_A && buttonPressed_A)
             {
                 samples.push_back(255);
@@ -2073,33 +1974,11 @@ void OculusWorldDemoApp::HandleHaptics()
             break;
 
         // Test Frequency/4
-        case 9:
+        case 8:
             if (!wasButtonPressed_A && buttonPressed_A)
                 for (int32_t i = 0; i < 20; ++i)
                     samples.push_back( (i/4 % 2) * 255 );
             break;
-
-        // Test ovrHapticsClip playback
-        case 10:
-            if (!buttonPressed_A || TouchHapticsClip.Samples == nullptr || TouchHapticsClip.SamplesCount <= 0)
-                continue;
-
-            result = ovr_GetControllerVibrationState(Session, touchController[t], &state);
-            if (result != ovrSuccess || state.SamplesQueued >= kLowLatencyBufferSizeInSamples)
-            {
-                WriteLog("%s Haptics skipped. Queue size %d", kTouchStr[t], state.SamplesQueued);
-                continue;
-            }
-
-            const uint8_t* hapticsSamples = (const uint8_t*)TouchHapticsClip.Samples;
-            for (int32_t i = 0; i < kLowLatencyBufferSizeInSamples; ++i)
-            {
-                int32_t hapticsPlayIndex = (TouchHapticsPlayIndex + i) % TouchHapticsClip.SamplesCount;
-                samples.push_back(*(hapticsSamples + hapticsPlayIndex));
-            }
-            TouchHapticsPlayIndex = (TouchHapticsPlayIndex + (int32_t)samples.size()) % TouchHapticsClip.SamplesCount;
-            break;
-
         }
 
         if (samples.size() > 0)
@@ -2137,19 +2016,14 @@ void OculusWorldDemoApp::OnIdle()
 
     if (!HmdDisplayAcquired)
     {
-        int result = InitializeRendering(false);
+        InitializeRendering(false);
 
-        // There were cases where InitializeRendering would fail but
-        // HmdDisplayAcquired was still set to true.
-        OVR_ASSERT(!((result == 1) && HmdDisplayAcquired));
-
-        if (!HmdDisplayAcquired || (result == 1))
+        if (!HmdDisplayAcquired)
         {
             std::this_thread::sleep_for(std::chrono::seconds(1));
             return;
-        }
     }
-
+    }
 
     double curtime = ovr_GetTimeInSeconds();
     // If running slower than 10fps, clamp. Helps when debugging, because then dt can be minutes!
@@ -2160,19 +2034,12 @@ void OculusWorldDemoApp::OnIdle()
 
     if (HmdSettingsChanged)
     {
-        ovrResult error = CalculateHmdValues();
-        if (HandleOvrError(error))
-        {
-            return;
-        }
+        CalculateHmdValues();
     }
 
     if (LoadingState == LoadingState_DoLoad)
     {
-        {
-            PopulateScene(MainFilePath.c_str());
-        }
-
+        PopulateScene(MainFilePath.c_str());
         LoadingState = LoadingState_Finished;
         return;
     }
@@ -2188,23 +2055,9 @@ void OculusWorldDemoApp::OnIdle()
         NotificationTimeout = 0.0;
     }
 
-    ovrResult error = ovrSuccess;
 
-#if USE_WAITFRAME
-    int frameIndex = TotalFrameCounter;
-
-    error = ovr_WaitToBeginFrame(Session, frameIndex);
-    if (HandleOvrError(error))
-      return;
-
-    HmdFrameTiming = ovr_GetPredictedDisplayTime(Session, frameIndex);
-
-    error = ovr_BeginFrame(Session, frameIndex);
-    if (HandleOvrError(error))
-      return;
-#else
     HmdFrameTiming = ovr_GetPredictedDisplayTime(Session, 0);
-#endif //USE_WAITFRAME
+
 
 
     InterAxialDistance = ovr_GetFloat(Session, "server:InterAxialDistance", -1.0f );
@@ -2234,23 +2087,16 @@ void OculusWorldDemoApp::OnIdle()
     HasInputState = (ovr_GetInputState(Session, ovrControllerType_XBox, &GamepadInputState) == ovrSuccess) || HasInputState;
 
     ovr_GetInputState(Session, ovrControllerType_Active, &ActiveControllerState);
-
-    if (sessionStatus.HasInputFocus) {
-      UpdateActiveControllerState();
-    } else {
-      HasInputState = false;
-    }
+    UpdateActiveControllerState();
 
     HandPoses[0] = trackState.HandPoses[0].ThePose;
     HandPoses[1] = trackState.HandPoses[1].ThePose;
     HandStatus[0] = trackState.HandStatusFlags[0];
     HandStatus[1] = trackState.HandStatusFlags[1];
 
-// Apparently one of the build targets in the build machine is non-private
-
     if ( HasInputState )
     {
-        HandleHaptics();
+        handleHaptics(Session, LastInputState, InputState);
         HandleBoundaryControls();
     }
 
@@ -2323,14 +2169,12 @@ void OculusWorldDemoApp::OnIdle()
         OVR_ASSERT ( false );
         break;
     }
-    {
-        // Update pose based on frame.
-        ThePlayer.HeadPose = trackState.HeadPose.ThePose;
+    // Update pose based on frame.
+    ThePlayer.HeadPose = trackState.HeadPose.ThePose;
 
-        // Movement/rotation with the gamepad.
-        ThePlayer.BodyYaw -= ThePlayer.GamepadRotate.x * dt;
-        ThePlayer.HandleMovement(dt, &CollisionModels, &GroundCollisionModels, ShiftDown);
-    }
+    // Movement/rotation with the gamepad.
+    ThePlayer.BodyYaw -= ThePlayer.GamepadRotate.x * dt;
+    ThePlayer.HandleMovement(dt, &CollisionModels, &GroundCollisionModels, ShiftDown);
 
     // Find the pose of the player's torso (rather than their head) in the world.
     // Literally, this is the pose of the middle eye if they were sitting still and upright, facing forwards.
@@ -2372,32 +2216,31 @@ void OculusWorldDemoApp::OnIdle()
          break;
     }
 
+    ovrResult error = ovrSuccess;
+
     // Determine if we are rendering this frame. Frame rendering may be
     // skipped based on FreezeEyeUpdate and Time-warp timing state.
     bool bupdateRenderedView = FrameNeedsRendering(curtime) && (sessionStatus.IsVisible || (LoadingState == LoadingState_Frame0));
 
-    // Pick an appropriately "big enough" size for the HUD and menu and render them their textures texture.
-    Sizei hudTargetSize = Sizei ( 2048, 2048 );
-    EnsureRendertargetAtLeastThisBig(Rendertarget_Hud, hudTargetSize, false, -1, error);
-    if (HandleOvrError(error))
-        return;
-
-    // Menu brought up by tab
-    Menu.SetShortcutChangeMessageEnable ( ShortcutChangeMessageEnable );
-    Sizei menuTargetSize = Sizei ( 2048, 2048 );
-    EnsureRendertargetAtLeastThisBig(Rendertarget_Menu, menuTargetSize, false, -1, error);
-    if (HandleOvrError(error))
-        return;
-
     if (bupdateRenderedView)
     {
         float textHeight = MenuHudTextPixelHeight;
-
+        // Pick an appropriately "big enough" size for the HUD and menu and render them their textures texture.
+        Sizei hudTargetSize = Sizei ( 2048, 2048 );
+        EnsureRendertargetAtLeastThisBig(Rendertarget_Hud, hudTargetSize, false, -1, error);
+        if (HandleOvrError(error))
+            return;
         HudRenderedSize = RenderTextInfoHud(textHeight);
         OVR_ASSERT ( HudRenderedSize.w <= hudTargetSize.w );        // Grow hudTargetSize if needed.
         OVR_ASSERT ( HudRenderedSize.h <= hudTargetSize.h );
         OVR_UNUSED ( hudTargetSize );
 
+        // Menu brought up by tab
+        Menu.SetShortcutChangeMessageEnable ( ShortcutChangeMessageEnable );
+        Sizei menuTargetSize = Sizei ( 2048, 2048 );
+        EnsureRendertargetAtLeastThisBig(Rendertarget_Menu, menuTargetSize, false, -1, error);
+        if (HandleOvrError(error))
+            return;
         MenuRenderedSize = RenderMenu(textHeight);
         OVR_ASSERT ( MenuRenderedSize.w <= menuTargetSize.w );        // Grow hudTargetSize if needed.
         OVR_ASSERT ( MenuRenderedSize.h <= menuTargetSize.h );
@@ -2495,12 +2338,12 @@ void OculusWorldDemoApp::OnIdle()
     // Move the menu forwards of the player's torso.
     MenuPose.Translation = MenuTranslationOffset + MenuPose.Rotation.Rotate(Vector3f(0.0f, 0.0f, -MenuHudDistance));
 
-	// Call ovr_GetRenderDesc each frame to get the ovrEyeRenderDesc, as the returned values (e.g. HmdToEyePose) may change at runtime.
+	// Call ovr_GetRenderDesc each frame to get the ovrEyeRenderDesc, as the returned values (e.g. HmdToEyeOffset) may change at runtime.
     EyeRenderDesc[0] = ovr_GetRenderDesc(Session, ovrEye_Left, g_EyeFov[0]);
     EyeRenderDesc[1] = ovr_GetRenderDesc(Session, ovrEye_Right, g_EyeFov[1]);
 
     // Pass in the mideye-to-real-eye vectors we get from the user's profile.
-    ovrPosef HmdToEyePose[2] = { EyeRenderDesc[0].HmdToEyePose, EyeRenderDesc[1].HmdToEyePose};
+    ovrVector3f HmdToEyeOffset[2] = { EyeRenderDesc[0].HmdToEyeOffset, EyeRenderDesc[1].HmdToEyeOffset };
     float localPositionTrackingScale = PositionTrackingScale;
 
     if (bupdateRenderedView)
@@ -2535,15 +2378,13 @@ void OculusWorldDemoApp::OnIdle()
 
         pRender->BeginScene();
 
-        // In most cases eyeRenderHmdToEyePose should be the same values sent into ovrViewScaleDesc below
+        // In most cases eyeRenderHmdToEyeOffset should be the same values sent into ovrViewScaleDesc below
         // except when we want to force mono rendering even if we might end up doing stereo 3D reprojection
         // during positional timewarp when the depth buffer is available
-        ovrPosef eyeRenderHmdToEyePose[2] = {HmdToEyePose[0], HmdToEyePose[1] };
-
-        const ovrQuatf quatIdentity = {0, 0, 0, 1.0f};
+        ovrVector3f eyeRenderHmdToEyeOffset[2] = { HmdToEyeOffset[0], HmdToEyeOffset[1] };
 
         // Monoscopic rendering can do two things:
-        //  1) Sets eye HmdToEyePose values to 0.0 (effective IPD == 0), but retains head-tracking at its original scale.
+        //  1) Sets eye HmdToEyeOffset values to 0.0 (effective IPD == 0), but retains head-tracking at its original scale.
         //  2) Sets the player scale to zero, which effectively sets both IPD and head-tracking to 0.
         switch ( MonoscopicRenderMode )
         {
@@ -2552,18 +2393,13 @@ void OculusWorldDemoApp::OnIdle()
         case Mono_ZeroIpd:
             {
                 // Make sure both eyes use the same "centered eye" offset
-                Vector3f centerEyeOffset = ((Vector3f)EyeRenderDesc[0].HmdToEyePose.Position +
-                                            (Vector3f)EyeRenderDesc[1].HmdToEyePose.Position) * 0.5f;
-                eyeRenderHmdToEyePose[0].Position = centerEyeOffset;
-                eyeRenderHmdToEyePose[1].Position = centerEyeOffset;
-                eyeRenderHmdToEyePose[0].Orientation = quatIdentity;
-                eyeRenderHmdToEyePose[1].Orientation = quatIdentity;
+                Vector3f centerEyeOffset = ((Vector3f)EyeRenderDesc[0].HmdToEyeOffset + (Vector3f)EyeRenderDesc[1].HmdToEyeOffset) * 0.5f;
+                eyeRenderHmdToEyeOffset[0] = centerEyeOffset;
+                eyeRenderHmdToEyeOffset[1] = centerEyeOffset;
             }
             break;
         case Mono_ZeroPlayerScale:
             localPositionTrackingScale = 0.0f;
-            eyeRenderHmdToEyePose[0].Orientation = quatIdentity;
-            eyeRenderHmdToEyePose[1].Orientation = quatIdentity;
             break;
         default: OVR_ASSERT ( false ); break;
         }
@@ -2571,7 +2407,7 @@ void OculusWorldDemoApp::OnIdle()
         WasteCpuTime(SceneRenderWasteCpuTimePreTrackingQueryMs);
 
         // These are in real-world physical meters. It's where the player *actually is*, not affected by any virtual world scaling.
-        ovr_GetEyePoses(Session, 0, ovrTrue, eyeRenderHmdToEyePose, EyeRenderPose, &SensorSampleTimestamp);
+        ovr_GetEyePoses(Session, 0, ovrTrue, eyeRenderHmdToEyeOffset, EyeRenderPose, &SensorSampleTimestamp);
 
         if (VisualizeSeatLevel && Sitting)
         {
@@ -2590,14 +2426,12 @@ void OculusWorldDemoApp::OnIdle()
         // Scale by player's virtual head size (usually 1.0, but for special effects we can make the player larger or smaller).
         localEyeRenderPose[0].Position = ((Vector3f)EyeRenderPose[0].Position) * localPositionTrackingScale;
         localEyeRenderPose[1].Position = ((Vector3f)EyeRenderPose[1].Position) * localPositionTrackingScale;
-        {
-            ViewFromWorld[0] = CalculateViewFromPose(localEyeRenderPose[0]);
-            ViewFromWorld[1] = CalculateViewFromPose(localEyeRenderPose[1]);
-        }
+
+        ViewFromWorld[0] = CalculateViewFromPose(localEyeRenderPose[0]);
+        ViewFromWorld[1] = CalculateViewFromPose(localEyeRenderPose[1]);
 
         int currDrawFlushCount = 0;
         bool secondSwapChainUsed = false;
-        bool depthSwapChainUsed = true; // true in most cases
 
         WasteCpuTime(SceneRenderWasteCpuTimePreRenderMs);
 
@@ -2605,8 +2439,6 @@ void OculusWorldDemoApp::OnIdle()
         {
             if (GridDisplayMode == GridDisplay_GridDirect)
             {
-                depthSwapChainUsed = false;
-
                 OVR_ASSERT(EyeTexture[0] == RenderTargets[Rendertarget_BothEyes].pColorTex);
                 OVR_ASSERT(EyeTexture[1] == RenderTargets[Rendertarget_BothEyes].pColorTex);
 
@@ -2618,7 +2450,8 @@ void OculusWorldDemoApp::OnIdle()
             }
             else if (MonoscopicRenderMode != Mono_Off)
             {
-                // Zero IPD eye rendering: draw into left eye only, re-use texture for right eye.
+                // Zero IPD eye rendering: draw into left eye only,
+                // re-use  texture for right eye.
 
                 // Note that DrawEyeTargets[] may be different from EyeTexture[] in the case of MSAA.
                 OVR_ASSERT ( EyeTexture[0] == RenderTargets[Rendertarget_Left].pColorTex );
@@ -2640,10 +2473,7 @@ void OculusWorldDemoApp::OnIdle()
                 OVR_ASSERT ( EyeTexture[1] == RenderTargets[Rendertarget_BothEyes].pColorTex );
 
                 pRender->SetRenderTarget(DrawEyeTargets[Rendertarget_BothEyes]->pColorTex, DrawEyeTargets[Rendertarget_BothEyes]->pDepthTex);
-
-                {
-                    pRender->Clear(0.0f, 0.0f, 0.0f, 1.0f, (DepthModifier == NearLessThanFar ? 1.0f : 0.0f));
-                }
+                pRender->Clear(0.0f, 0.0f, 0.0f, 1.0f, (DepthModifier == NearLessThanFar ? 1.0f : 0.0f));
 
                 for (int eyeIndex = 0; eyeIndex < ovrEye_Count; eyeIndex++)
                 {
@@ -2656,31 +2486,16 @@ void OculusWorldDemoApp::OnIdle()
                 // Separate eye rendering - each eye gets its own render target.
                 secondSwapChainUsed = true;
 
-                // Note that DrawEyeTargets[] may be different from EyeTexture[] in the case of MSAA. 
+                // Note that DrawEyeTargets[] may be different from EyeTexture[] in the case of MSAA.
                 OVR_ASSERT ( EyeTexture[0] == RenderTargets[Rendertarget_Left ].pColorTex );
                 OVR_ASSERT ( EyeTexture[1] == RenderTargets[Rendertarget_Right].pColorTex );
-
-                if (LayerCubemap == Cubemap_Render)
-                {
-                    if (!CubeRendered)
-                    {
-                        RenderCubemap();
-                    }
-                }
-                else
-                {
-                    CubeRendered = false;
-                }
 
                 for (int eyeIndex = 0; eyeIndex < ovrEye_Count; eyeIndex++)
                 {
                     pRender->SetRenderTarget(
                         DrawEyeTargets[(eyeIndex == 0) ? Rendertarget_Left : Rendertarget_Right]->pColorTex,
                         DrawEyeTargets[(eyeIndex == 0) ? Rendertarget_Left : Rendertarget_Right]->pDepthTex);
-                    {
-                        pRender->Clear(0.0f, 0.0f, 0.0f, 1.0f, (DepthModifier == NearLessThanFar ? 1.0f : 0.0f));
-                    }
-
+                    pRender->Clear(0.0f, 0.0f, 0.0f, 1.0f, (DepthModifier == NearLessThanFar ? 1.0f : 0.0f));
 
                     RenderEyeView((ovrEyeType)eyeIndex);
                     FlushIfApplicable(DrawFlush_AfterEachEyeRender, currDrawFlushCount);
@@ -2695,11 +2510,38 @@ void OculusWorldDemoApp::OnIdle()
         pRender->FinishScene();
         pRender->SetGlobalTint ( Vector4f ( 1.0f, 1.0f, 1.0f, 1.0 ) );
 
+        if (MultisampleEnabled && SupportsMultisampling)
+        {
+            if (MonoscopicRenderMode != Mono_Off)
+            {
+                pRender->ResolveMsaa(MsaaRenderTargets[Rendertarget_Left].pColorTex, RenderTargets[Rendertarget_Left].pColorTex);
+            }
+            else if (RendertargetIsSharedByBothEyes)
+            {
+                pRender->ResolveMsaa(MsaaRenderTargets[Rendertarget_BothEyes].pColorTex, RenderTargets[Rendertarget_BothEyes].pColorTex);
+            }
+            else
+            {
+                for (int eyeIndex = 0; eyeIndex < ovrEye_Count; eyeIndex++)
+                {
+                    // FIXME! FIXME! FIXME!
+                    // In reconnect someone is stomping on our textures. If this happens
+                    // bail. In the next pass we'll get it right
+                    if (MsaaRenderTargets[eyeIndex].pColorTex == nullptr)
+                    {
+                        HmdSettingsChanged = true;
+                        return;
+                    }
+
+                    pRender->ResolveMsaa(MsaaRenderTargets[eyeIndex].pColorTex, RenderTargets[eyeIndex].pColorTex);
+                }
+            }
+        }
 
         // Commit the swap chains
         // If Layer0GenMips was enabled, then Commit() will internally generate mips before actually committing texture
         EyeTexture[0]->Commit();
-        if (Layer0Depth && depthSwapChainUsed)
+        if (Layer0Depth)
         {
             EyeDepthTexture[0]->Commit();
         }
@@ -2707,7 +2549,7 @@ void OculusWorldDemoApp::OnIdle()
         if (secondSwapChainUsed)
         {
             EyeTexture[1]->Commit();
-            if (Layer0Depth && depthSwapChainUsed)
+            if (Layer0Depth)
             {
                 EyeDepthTexture[1]->Commit();
             }
@@ -2752,7 +2594,6 @@ void OculusWorldDemoApp::OnIdle()
                 // The usual OpenGL viewports-don't-match-UVs oddness.
                 EyeLayer.EyeFov.Viewport[eye].Pos.y = EyeTexture[eye]->GetHeight() - (vp.Pos.y + vp.Size.h);
             }
-
 
             // Do NOT advance TextureSet currentIndex - that has already been done above just before rendering.
         }
@@ -2943,11 +2784,11 @@ void OculusWorldDemoApp::OnIdle()
 
                 ovrLayerQuad& cl = CockpitLayer[cockpitLayer];
 
-                cl.Header.Type = ovrLayerType_Quad;
-                cl.Header.Flags = LayerCockpitHighQuality ? ovrLayerFlag_HighQuality : 0;
-                cl.QuadPoseCenter = pose;
-                cl.QuadSize = CockpitPanelSize[cockpitLayer] / PositionTrackingScale;
-                cl.ColorTexture = CockpitPanelTexture->Get_ovrTextureSet(); OVR_ASSERT(cl.ColorTexture);
+                cl.Header.Type      = ovrLayerType_Quad;
+                cl.Header.Flags     = LayerCockpitHighQuality ? ovrLayerFlag_HighQuality : 0;
+                cl.QuadPoseCenter   = pose;
+                cl.QuadSize         = CockpitPanelSize[cockpitLayer] / PositionTrackingScale;
+                cl.ColorTexture     = CockpitPanelTexture->Get_ovrTextureSet(); OVR_ASSERT(cl.ColorTexture);
                 cl.Viewport = CockpitClipRect[cockpitLayer];
 
                 // Always enable, then maybe disable if flag is not set.
@@ -2968,54 +2809,6 @@ void OculusWorldDemoApp::OnIdle()
         }
 
 
-        // Cylinder is fixed in world space.
-        LayerList[LayerNum_Cylinder] = nullptr;
-
-        Ptr<Texture> cylinderTexture = TextureOculusCube;
-        if ( LayerCylinderEnabled && ( cylinderTexture != NULL ) )
-        {
-            ovrRecti clipRect;
-            clipRect = Recti( 0, 0, 715,   715 );
-
-            Posef pose;
-            pose.Translation = Vector3f(0.0f, MenuUserEyeHeight, 0.0f);
-
-            // Scale from virtual-world size to real-world physical player size.
-            pose.Translation /= PositionTrackingScale;
-
-            CylinderLayer.Header.Type      = ovrLayerType_Cylinder;
-            CylinderLayer.Header.Flags     = (LayerCylinderHighQuality ? ovrLayerFlag_HighQuality : 0);
-            CylinderLayer.ColorTexture     = cylinderTexture->Get_ovrTextureSet(); OVR_ASSERT(CylinderLayer.ColorTexture);
-            CylinderLayer.Viewport         = clipRect;
-
-            CylinderLayer.CylinderPoseCenter  = pose;
-            CylinderLayer.CylinderAspectRatio = LayerCylinderAspectRatio;
-            CylinderLayer.CylinderRadius      = LayerCylinderRadius / PositionTrackingScale;
-            CylinderLayer.CylinderAngle       = LayerCylinderAngle;
-
-            LayerList[LayerNum_Cylinder] = &CylinderLayer.Header;
-        }
-
-        LayerList[LayerNum_Cubemap] = nullptr;
-        Ptr<Texture> cubemapTexture;
-        if (LayerCubemap == Cubemap_Render )
-        {
-            cubemapTexture = CubemapRenderTexture;
-        }
-        else if ( LayerCubemap == Cubemap_Load )
-        {
-            cubemapTexture = CubemapLoadTexture;
-        }
-		    
-        if ( ( LayerCubemap != Cubemap_Off ) && cubemapTexture != NULL )
-		    {
-            CubemapLayer.Header.Type = ovrLayerType_Cube;
-            CubemapLayer.Header.Flags = LayerCubemapHighQuality ? ovrLayerFlag_HighQuality : 0;
-            CubemapLayer.Orientation = Quatf::Identity();
-            CubemapLayer.CubeMapTexture = cubemapTexture->Get_ovrTextureSet();
-
-            LayerList[LayerNum_Cubemap] = &CubemapLayer.Header;
-        }
 
         // Hack variable - Tuned to match existing rendering path size, and the default of 22 pixels.
         float magicOrthoScale       = HmdDesc.Type == ovrHmd_DK2 ? 0.00146f : 0.001013f;
@@ -3148,8 +2941,8 @@ void OculusWorldDemoApp::OnIdle()
     // Set up positional data.
     ovrViewScaleDesc viewScaleDesc;
     viewScaleDesc.HmdSpaceToWorldScaleInMeters = localPositionTrackingScale;
-    viewScaleDesc.HmdToEyePose[0] = HmdToEyePose[0];
-    viewScaleDesc.HmdToEyePose[1] = HmdToEyePose[1];
+    viewScaleDesc.HmdToEyeOffset[0] = HmdToEyeOffset[0];
+    viewScaleDesc.HmdToEyeOffset[1] = HmdToEyeOffset[1];
 
     // Draw the mirror window contents using the previous frame's HMD mirror buffer
     // We do this before calling ovr_SubmitFrame() to avoid the GPU from doing tiny
@@ -3168,26 +2961,23 @@ void OculusWorldDemoApp::OnIdle()
         if (MirrorToWindow && ((!MirrorTexture) ||
                                (MirrorTexture->GetWidth() != WindowSize.w) ||
                                (MirrorTexture->GetHeight() != WindowSize.h) ||
-                               (MirrorIsSrgb != SrgbRequested) ||
-                               (MirrorOptionsChanged)))
+                               (MirrorIsSrgb != SrgbRequested)))
         {
             MirrorTexture.Clear();  // first make sure we destroy the old mirror texture if one existed
 
             // Create one
-            uint64_t format = Texture_RGBA | Texture_Mirror;
+            int format = Texture_RGBA | Texture_Mirror;
             if (SrgbRequested)
             {
                 // The mirror texture must match the backbuffer - the blit will not convert.
                 format |= Texture_SRGB;
             }
 
-            format |= CurrentMirrorOptionsFormat;
             MirrorTexture = *pRender->CreateTexture(format, WindowSize.w, WindowSize.h, nullptr, 1, &error);
             if (HandleOvrError(error))
                 return;
 
             MirrorIsSrgb = SrgbRequested;    // now they match
-            MirrorOptionsChanged = false;
         }
         if (MirrorTexture && !MirrorToWindow)
         {
@@ -3196,23 +2986,11 @@ void OculusWorldDemoApp::OnIdle()
         }
 
         pRender->SetDefaultRenderTarget();
-        pRender->Clear(0.0f, 1.0f, 0.0f, 0.0f);	// green screen for mixed reality capture mode
+        pRender->Clear(0.0f, 0.0f, 0.0f, 0.0f);
 
         if (MirrorTexture)
         {
-            if (IsMixedRealityCaptureMode)
-            {
-                pRender->Blt(MirrorTexture, 0, 0, WindowSize.w, WindowSize.h);
-            }
-            else
-            {
-                pRender->Blt(MirrorTexture);
-            }
-        }
-
-        if (IsMixedRealityCaptureMode)
-        {
-            RenderCamNearFarHandsView();
+            pRender->Blt(MirrorTexture);
         }
 
         if (MenuHudAlwaysOnMirrorWindow && (MenuRenderedSize.w > 0))
@@ -3234,26 +3012,7 @@ void OculusWorldDemoApp::OnIdle()
                 nullptr, true);
         }
 
-        // Cubemap must be at the bottom of the layer list to replace the main scene
-        // Must switch MainEye and Cubemap layer positions when cubemap is enabled
-        // This avoids causing an error when the LayerList (cubemap) shows up as null
-        if (LayerCubemap != Cubemap_Off)
-        {
-            ovrLayerHeader* maineye = LayerList[LayerNum_MainEye];
-            ovrLayerHeader* cubemap = LayerList[LayerNum_Cubemap];
-            memcpy(maineye, LayerList[LayerNum_MainEye], sizeof(ovrLayerHeader*));
-            memcpy(cubemap, LayerList[LayerNum_Cubemap], sizeof(ovrLayerHeader*));
-            LayerList[LayerNum_MainEye] = cubemap;
-            LayerList[LayerNum_Cubemap] = maineye;
-        }
-
-
-#if USE_WAITFRAME
-        error = ovr_EndFrame(Session, frameIndex, &viewScaleDesc, LayerList, numLayers);
-#else
         error = ovr_SubmitFrame(Session, 0, &viewScaleDesc, LayerList, numLayers);
-#endif
-
         if (HandleOvrError(error))
             return;
 
@@ -3441,7 +3200,7 @@ void OculusWorldDemoApp::ApplyDynamicResolutionScaling()
     {
         ovrPerfStats perfStats = {};
         ovr_GetPerfStats(Session, &perfStats);
-
+        
         AdaptivePixelDensity *= sqrtf(perfStats.AdaptiveGpuPerformanceScale);
         AdaptivePixelDensity = Alg::Clamp(AdaptivePixelDensity, 0.1f, DesiredPixelDensity);
 
@@ -3474,24 +3233,13 @@ void OculusWorldDemoApp::UpdateFrameRateCounter(double curtime)
     }
 }
 
-void OculusWorldDemoApp::RenderEyeView(ovrEyeType eye, const Matrix4f* optionalMatrix, bool onlyRenderWorld)
+void OculusWorldDemoApp::RenderEyeView(ovrEyeType eye)
 {
     Recti    renderViewport = EyeRenderViewports[eye];
 
     // *** 3D - Configures Viewport/Projection and Render
-    if (!onlyRenderWorld && (LayerCubemap != Cubemap_Off))
-    {
-        pRender->Clear(0.0f, 0.0f, 0.0f, 0.0f, (DepthModifier == NearLessThanFar ? 1.0f : 0.0f));
-    }
 
-    {
-        if (!onlyRenderWorld)
-        {
-            pRender->ApplyStereoParams(renderViewport, Projection[eye]);
-        }
-    }
-
-    pRender->SetCullMode(RenderDevice::Cull_Back);
+    pRender->ApplyStereoParams(renderViewport, Projection[eye]);
     pRender->SetDepthMode(true, true, (DepthModifier == NearLessThanFar ?
                                        RenderDevice::Compare_Less :
                                        RenderDevice::Compare_Greater));
@@ -3503,30 +3251,17 @@ void OculusWorldDemoApp::RenderEyeView(ovrEyeType eye, const Matrix4f* optionalM
     {
         if (SceneMode != Scene_OculusCubes && SceneMode != Scene_DistortTune)
         {
-            if (optionalMatrix)
-            {
-                MainScene.Render(pRender, *optionalMatrix);
-            }
-            else if (LayerCubemap == Cubemap_Off)
-            {
-                MainScene.Render(pRender, ViewFromWorld[eye]);
-            }
+            MainScene.Render(pRender, ViewFromWorld[eye]);
 
-            if (!onlyRenderWorld)
-            {
-                RenderControllers(eye);
-                RenderCockpitPanels(eye);
-                RenderAnimatedBlocks(eye, ovr_GetTimeInSeconds());
-            }
-            
+            RenderControllers(eye);
+            RenderCockpitPanels(eye);
+            RenderAnimatedBlocks(eye, ovr_GetTimeInSeconds());
+
             // Boundary cubes
             if (TextScreen == Text_BoundaryInfo)
             {
                 Matrix4f view = ViewFromWorld[eye] * baseTranslate * baseYaw;
-                if (!onlyRenderWorld)
-                {
-                    RenderBoundaryScene(view);
-                }
+                RenderBoundaryScene(view);
             }
 
 
@@ -3563,8 +3298,7 @@ void OculusWorldDemoApp::RenderEyeView(ovrEyeType eye, const Matrix4f* optionalM
 			if (VisualizeTracker)
 				PositionalTracker.Draw(Session, pRender, ThePlayer, TrackingOriginType, Sitting, ExtraSittingAltitude, ViewFromWorld, eye, EyeRenderPose);
 		}
-    if(!onlyRenderWorld)
-    {
+
         if (SceneMode == Scene_Cubes)
         {
             // Draw scene cubes overlay. Green if position tracked, red otherwise.
@@ -3591,12 +3325,12 @@ void OculusWorldDemoApp::RenderEyeView(ovrEyeType eye, const Matrix4f* optionalM
             Matrix4f heightTranslate = Matrix4f::Translation(0.0f, heightOffset, 0.0f);
             OculusCubesScene.Render(pRender, ViewFromWorld[eye] * baseTranslate * heightTranslate * baseYaw);
         }
-    }
-      if (ShowCalibratedOrigin)
-      {
-          Matrix4f cubeScale = Matrix4f::Scaling(0.05f / BlockModelSize); // cubes have an original scale of 4 mm, and we want 5 cm.
-          SmallGreenCube.Render(pRender, Matrix4f(Posef(EyeRenderPose[eye]).Inverted() * Posef(CalibratedTrackingOrigin)) * cubeScale);
-      }
+
+        if (ShowCalibratedOrigin)
+        {
+            Matrix4f cubeScale = Matrix4f::Scaling(0.05f / BlockModelSize); // cubes have an original scale of 4 mm, and we want 5 cm.
+            SmallGreenCube.Render(pRender, Matrix4f(Posef(EyeRenderPose[eye]).Inverted() * Posef(CalibratedTrackingOrigin)) * cubeScale);
+        }
     }
 
     if (GridDisplayMode != GridDisplay_None)
@@ -3604,18 +3338,10 @@ void OculusWorldDemoApp::RenderEyeView(ovrEyeType eye, const Matrix4f* optionalM
         switch ( GridDisplayMode )
         {
         case GridDisplay_GridOnly:
-            if (LayerCubemap != Cubemap_Off)
-            {
-                pRender->Clear(0.0f, 0.0f, 0.0f, 1.0f, (DepthModifier == NearLessThanFar ? 1.0f : 0.0f));
-            }
         case GridDisplay_GridAndScene:
             RenderGrid(eye, EyeRenderViewports[eye]);
             break;
         case GridDisplay_GridDirect:
-            if (LayerCubemap != Cubemap_Off)
-            {
-                pRender->Clear(0.0f, 0.0f, 0.0f, 1.0f, (DepthModifier == NearLessThanFar ? 1.0f : 0.0f));
-            }
             RenderGrid(eye, Recti(HmdDesc.Resolution));
             break;
         default: OVR_ASSERT ( false ); break;
@@ -3631,11 +3357,11 @@ void OculusWorldDemoApp::RenderEyeView(ovrEyeType eye, const Matrix4f* optionalM
     Vector2f orthoScale1   = Vector2f(1.0f) / Vector2f(EyeRenderDesc[1].PixelsPerTanAngleAtCenter);
 
     OrthoProjection[0] = ovrMatrix4f_OrthoSubProjection(Projection[0], orthoScale0,
-                                                        orthoDistance + EyeRenderDesc[0].HmdToEyePose.Position.z,
-                                                        EyeRenderDesc[0].HmdToEyePose.Position.x);
+                                                        orthoDistance + EyeRenderDesc[0].HmdToEyeOffset.z,
+                                                        EyeRenderDesc[0].HmdToEyeOffset.x);
     OrthoProjection[1] = ovrMatrix4f_OrthoSubProjection(Projection[1], orthoScale1,
-                                                        orthoDistance + EyeRenderDesc[1].HmdToEyePose.Position.z,
-                                                        EyeRenderDesc[1].HmdToEyePose.Position.x);
+                                                        orthoDistance + EyeRenderDesc[1].HmdToEyeOffset.z,
+                                                        EyeRenderDesc[1].HmdToEyeOffset.x);
 
     // Render UI in 2D orthographic coordinate system that maps [-1,1] range
     // to a readable FOV area centered at your eye and properly adjusted.
@@ -3736,214 +3462,6 @@ void OculusWorldDemoApp::RenderEyeView(ovrEyeType eye, const Matrix4f* optionalM
 
 }
 
-
-bool OculusWorldDemoApp::SetupMixedRealityCapture()
-{
-    NumberOfCameras = MaxNumberOfCameras;
-    ovrResult error = ovr_GetExternalCameras(Session, &ExternalCameras[0], &NumberOfCameras);   // Here the 2nd parameter is the actual size of camera array
-    if (!OVR_SUCCESS(error))
-    {
-        DisplayLastErrorMessageBox("ovr_GetExternalCameras failure.");
-        return false;
-    }
-    // TO DO : need to set this by the user's camera name string
-    CurrentCameraID = 0;
-
-    WindowSize.w = ExternalCameras[CurrentCameraID].Intrinsics.ImageSensorPixelResolution.w;
-    WindowSize.h = ExternalCameras[CurrentCameraID].Intrinsics.ImageSensorPixelResolution.h;
-    // We have a 2X2 window for the Mixed Reality Capture mode. The top left quadrant is the mirror view;
-    // the top right quadrant is the foreground view; the bottom left quadrant is the hands/touches view;
-    // the bottom right quadrant is the background view.
-    Sizei tempWindowSize;
-    tempWindowSize.w = 2 * WindowSize.w;
-    tempWindowSize.h = 2 * WindowSize.h;
-
-    RenderParams.Resolution = tempWindowSize;
-    if (pRender != nullptr)
-    {
-        pRender->SetWindowSize(tempWindowSize.w, tempWindowSize.h);
-        pRender->SetParams(RenderParams);
-    }
-    pPlatform->SetWindowSize(tempWindowSize.w, tempWindowSize.h);   // resize the window
-    
-    NearRenderViewport = Recti(Vector2i(WindowSize.w, 0), WindowSize);
-    FarRenderViewport = Recti(Vector2i(WindowSize.w, WindowSize.h), WindowSize);
-    HandsRenderViewport = Recti(Vector2i(0, WindowSize.h), WindowSize);
-    
-    return true;
-}
-
-void OculusWorldDemoApp::CleanupMixedRealityCapture()
-{
-    NumberOfCameras = 0;
-    CurrentCameraID = -1;
-    WindowSize.w = DefaultWindowWidth;
-    WindowSize.h = DefaultWindowHeight;
-    pPlatform->SetWindowSize(WindowSize.w, WindowSize.h);   // resize the window
-}
-
-void OculusWorldDemoApp::RenderCamNearFarHandsView()
-{
-    Posef tempPose;
-    tempPose.SetIdentity();     // fixed camera pose
-    if (ExternalCameras[CurrentCameraID].Extrinsics.AttachedToDevice ==  ovrTrackedDevice_LTouch)
-        tempPose = HandPoses[0];
-    else if (ExternalCameras[CurrentCameraID].Extrinsics.AttachedToDevice == ovrTrackedDevice_LTouch)
-        tempPose = HandPoses[1];
-    else if (ExternalCameras[CurrentCameraID].Extrinsics.AttachedToDevice == ovrTrackedDevice_Object0)
-        tempPose = TrackedObjectPose;
-
-    Posef CamPose = tempPose * Posef(ExternalCameras[CurrentCameraID].Extrinsics.RelativePose);
-
-    Posef CamPosePlayer = ThePlayer.VirtualWorldTransformfromRealPose(CamPose, TrackingOriginType);
-    Vector3f up = CamPosePlayer.Rotation.Rotate(UpVector);
-    Vector3f forward = CamPosePlayer.Rotation.Rotate(ForwardVector);
-    Vector3f dif = ThePlayer.GetHeadPosition(TrackingOriginType) - CamPosePlayer.Translation;
-    DistanceToCamInMeters = forward.Dot(dif);
-    EyeRenderPose[EyeRenderPose_ExternalCamera] = ovrPosef(CamPose);  // external camera pose
-
-    unsigned int projectionModifier = createProjectionModifier();
-
-    ViewFromWorld[2] = Matrix4f::LookAtRH(CamPosePlayer.Translation, CamPosePlayer.Translation + forward, up);
-
-    // near view
-    CamProjection = ovrMatrix4f_Projection(ExternalCameras[CurrentCameraID].Intrinsics.FOVPort,
-        ExternalCameras[CurrentCameraID].Intrinsics.VirtualNearPlaneDistanceMeters,
-        DistanceToCamInMeters + NearFarOverlapInMeters,    // extend foreground viewing volume with 0.1 meter to avoid the seam between foreground and background images
-        projectionModifier);
-    pRender->ApplyStereoParams(NearRenderViewport, CamProjection);
-    pRender->SetDepthMode(true, true, (DepthModifier == NearLessThanFar ?
-        RenderDevice::Compare_Less :
-        RenderDevice::Compare_Greater));
-
-    if ((GridDisplayMode != GridDisplay_GridOnly) && (GridDisplayMode != GridDisplay_GridDirect))
-    {
-        if (SceneMode != Scene_OculusCubes && SceneMode != Scene_DistortTune)
-        {
-            MainScene.Render(pRender, ViewFromWorld[2]);
-        }
-    }
-
-    // far view
-    CamProjection = ovrMatrix4f_Projection(ExternalCameras[CurrentCameraID].Intrinsics.FOVPort,
-        DistanceToCamInMeters,
-        ExternalCameras[CurrentCameraID].Intrinsics.VirtualFarPlaneDistanceMeters,
-        projectionModifier);
-    pRender->ApplyStereoParams(FarRenderViewport, CamProjection);
-    pRender->SetDepthMode(true, true, (DepthModifier == NearLessThanFar ?
-        RenderDevice::Compare_Less :
-        RenderDevice::Compare_Greater));
-
-    if ((GridDisplayMode != GridDisplay_GridOnly) && (GridDisplayMode != GridDisplay_GridDirect))
-    {
-        if (SceneMode != Scene_OculusCubes && SceneMode != Scene_DistortTune)
-        {
-            MainScene.Render(pRender, ViewFromWorld[2]);
-        }
-    }
-
-    // hands view
-    CamProjection = ovrMatrix4f_Projection(ExternalCameras[CurrentCameraID].Intrinsics.FOVPort,
-        ExternalCameras[CurrentCameraID].Intrinsics.VirtualNearPlaneDistanceMeters,
-        ExternalCameras[CurrentCameraID].Intrinsics.VirtualFarPlaneDistanceMeters,
-        projectionModifier);
-    pRender->ApplyStereoParams(HandsRenderViewport, CamProjection);
-    pRender->SetDepthMode(true, true, (DepthModifier == NearLessThanFar ?
-        RenderDevice::Compare_Less :
-        RenderDevice::Compare_Greater));
-
-    if ((GridDisplayMode != GridDisplay_GridOnly) && (GridDisplayMode != GridDisplay_GridDirect))
-    {
-        if (SceneMode != Scene_OculusCubes && SceneMode != Scene_DistortTune)
-        {
-            RenderControllers(ovrEyeType(EyeRenderPose_ExternalCamera));   // 2 : from the external camera
-        }
-    }
-}
-
-void OculusWorldDemoApp::RenderCubemap()
-{
-    int numFaces = 6; 
-    int cubeMapSize = 1024;
-    Matrix4f currCubemapCameraView; // This will replace ViewFromWorld[eye] in RenderEyeView
-
-    uint64_t format = GetRenderDeviceTextureFormatForEyeTextureFormat(EyeTextureFormat);
-    Texture* color = pRender->CreateTexture(
-        format | Texture_RenderTarget | Texture_Cubemap | Texture_SwapTextureSetStatic | Texture_GenMipmapsBySdk,
-        cubeMapSize, cubeMapSize, NULL, 1, nullptr);
-    Texture* depth = pRender->GetDepthBuffer(cubeMapSize, cubeMapSize, 1, Texture_Depth32f);
-
-    // Set new projection matrix with FOV 45 degrees on all sides
-    FovPort newFOV = FovPort(1.0f, 1.0f, 1.0f, 1.0f);
-    unsigned int projectionModifier = createProjectionModifier();
-    Matrix4f projection = ovrMatrix4f_Projection(newFOV, NearClip, FarClip, projectionModifier);
-    
-    Recti renderViewport = Recti(0, 0, cubeMapSize, cubeMapSize);
-    
-    ovrPosef localEyeRenderPose[2] = { EyeRenderPose[0], EyeRenderPose[1] };
-    float localPositionTrackingScale = PositionTrackingScale;
-    localEyeRenderPose[0].Position = ((Vector3f)EyeRenderPose[0].Position) * localPositionTrackingScale;
-    localEyeRenderPose[0].Orientation = Quatf::Identity();
-
-    Matrix4f worldPose = (Matrix4f)ThePlayer.VirtualWorldTransformfromRealPose(localEyeRenderPose[0], TrackingOriginType);
-    Vector3f transl = worldPose.GetTranslation();
-    worldPose.SetIdentity();
-    worldPose.SetTranslation(transl);
-
-    for (int faceIndex = 0; faceIndex < numFaces; ++faceIndex)
-    {
-        switch (faceIndex)
-        {
-        case 0:
-            currCubemapCameraView = Matrix4f::RotationY(-MATH_FLOAT_PIOVER2) * worldPose; break; // Positive X
-        case 1:
-            currCubemapCameraView = Matrix4f::RotationY(MATH_FLOAT_PIOVER2) * worldPose; break; // Negative X
-        case 2:
-            currCubemapCameraView = Matrix4f::RotationZ(MATH_FLOAT_PI) * Matrix4f::RotationX(-MATH_FLOAT_PIOVER2) * worldPose; break; // Positive Y
-        case 3:
-            currCubemapCameraView = Matrix4f::RotationZ(MATH_FLOAT_PI) * Matrix4f::RotationX(MATH_FLOAT_PIOVER2) * worldPose; break; // Negative Y
-        case 4:
-            currCubemapCameraView = Matrix4f::RotationY(MATH_FLOAT_PI) * worldPose; break; // Positive Z
-        case 5:
-            currCubemapCameraView = worldPose; break; // Negative Z
-        }
-        currCubemapCameraView.SetTranslation(-(currCubemapCameraView.GetTranslation()));
-
-        // Give the current face index to set the current render target view
-        pRender->SetRenderTarget(color, depth, NULL, faceIndex);
-        pRender->Clear(0.0f, 0.0f, 0.0f, 0.0f, (DepthModifier == NearLessThanFar ? 1.0f : 0.0f), true, true, faceIndex);
-
-        // Set viewport and projection outside of RenderEyeView
-        pRender->ApplyStereoParams(renderViewport, projection);
-        RenderEyeView(ovrEye_Left, &currCubemapCameraView, true); // Give an optional matrix and boolean indicating not to render certain layers
-    }
-    // Flip each face of cubemap if OpenGL
-    if (TextureOriginAtBottomLeft)
-    {
-        Ptr<Texture> tempTex = pRender->CreateTexture(format, cubeMapSize, cubeMapSize, NULL, 1, nullptr);
-        pRender->BltFlipCubemap(color, tempTex);
-    }
-    // Save cubemap texture to DDS file if Direct3D
-    else if(LayerCubemapSaveOnRender)
-    {
-        std::string error;
-        
-        // strip off the filename - does the same thing as GetFilePath, but also removes the last /
-        const char* filename = 0;
-        ScanFilePath(MainFilePath.c_str(), &filename, 0);
-        std::string saveFileName = std::string(MainFilePath.c_str(), filename ? (filename - MainFilePath.c_str() - 1) : MainFilePath.size());
-        
-        bool result = pRender->SaveCubemapTexture(color, transl, saveFileName, &error);
-        if (!result)
-        {
-            std::string message = "Cubemap texture render save failure: " + error;
-            OVR_FAIL_M(message.c_str());
-        }
-    }
-    color->Commit();
-    CubemapRenderTexture = color;
-    CubeRendered = true;
-}
 
 void OculusWorldDemoApp::RenderCockpitPanels(ovrEyeType eye)
 {
@@ -4148,9 +3666,7 @@ Recti OculusWorldDemoApp::RenderTextInfoHud(float textHeight)
                     HmdDesc.ProductName,
                     ShutterType.c_str(),
                     InterAxialDistance * 1000.0f,   // convert to millimeters
-                    ThePlayer.UserStandingEyeHeight,
-                    EyeRenderDesc[0].HmdToEyePose.Position.x * 1000.0f, // convert to millimeters
-                    EyeRenderDesc[1].HmdToEyePose.Position.x * 1000.0f, // convert to millimeters
+                    ThePlayer.UserStandingEyeHeight, EyeRenderDesc[0].HmdToEyeOffset.x * 1000.0f, EyeRenderDesc[1].HmdToEyeOffset.x * 1000.0f, // convert to millimeters
                     (leftFov.GetHorizontalFovDegrees() + rightFov.GetHorizontalFovDegrees()) * 0.5f,
                     (leftFov.GetVerticalFovDegrees() + rightFov.GetVerticalFovDegrees()) * 0.5f,
                     pixelSizeWidth, pixelSizeHeight,
@@ -4196,7 +3712,7 @@ Recti OculusWorldDemoApp::RenderTextInfoHud(float textHeight)
 
             numFramesGpuPerfScaleWasntUpdated++;
 
-            char buf[2048];
+            char buf[1024];
             if (perfStats.FrameStatsCount >= 1)
             {
                 // Get the first entry which is the most recent
@@ -4205,15 +3721,13 @@ Recti OculusWorldDemoApp::RenderTextInfoHud(float textHeight)
                 snprintf(buf, sizeof(buf),
                     " SDK Performance Stats\n\n"
                     " HMD Frame #:\t400 %d\n"
-                    " App Frame #:\t400 %d\t650 App Dropped Count:\t1200 %d\t1650\n"
-                    " Comp Frame #:\t400 %d\t650 Comp Dropped Count:\t1200 %d\t1650\n\n"
-                    " App Latency (ms):\t580 %4.2f\t770 Comp Latency (ms):\t1450 %4.2f\t1650\n"
-                    " App GPU Time (ms):\t580 %4.2f\t770 App CPU Time (ms):\t1450 %4.2f\t1650\n"
+                    " App Frame #:\t400 %d\t650 App Dropped Count:\t1200 %d\n"
+                    " Comp Frame #:\t400 %d\t650 Comp Dropped Count:\t1200 %d\n\n"
+                    " App Latency (ms):\t580 %4.2f\t770 Comp Latency (ms):\t1450 %4.2f\n"
+                    " App GPU Time (ms):\t580 %4.2f\t770 App CPU Time (ms):\t1450 %4.2f\n"
                     " App Q-Ahead (ms):\t580 %4.2f\n"
-                    " Comp GPU Time (ms):\t580 %4.2f\t770 Comp CPU Time (ms):\t1450 %4.2f\n"
+                    " Comp CPU Time (ms):\t580 %4.2f\t770 Comp CPU Time (ms):\t1450 %4.2f\n"
                     " Comp CPU-to-GPU (ms):\t580 %4.2f\t770 Comp Present Buffer (ms):\t1450 %4.2f\n\n"
-                    " ASW Status:\t330 %s\t770 ASW Toggle Count:\t1250 %d\n"
-                    " ASW Present Count:\t550 %d\t770 ASW Fail Count:\t1250 %d\n\n"
                     " Perf Frame Count: %d / %d\t770 Dropped Stats: %s\n\n"
                     " Current GPU Perf: %4.2f%% \t770 Latched GPU Perf: %4.2f%%\n\n"
                     " < Press KeyPad \'/\' to reset stats >",
@@ -4225,8 +3739,6 @@ Recti OculusWorldDemoApp::RenderTextInfoHud(float textHeight)
                     newestFramePerfStats.AppQueueAheadTime * 1000.0f,
                     newestFramePerfStats.CompositorGpuElapsedTime * 1000.0f, newestFramePerfStats.CompositorCpuElapsedTime * 1000.0f,
                     newestFramePerfStats.CompositorCpuStartToGpuEndElapsedTime * 1000.0f, newestFramePerfStats.CompositorGpuEndToVsyncElapsedTime * 1000.0f,
-                    perfStats.AswIsAvailable ? (newestFramePerfStats.AswIsActive ? "Available - On" : "Available - Off") : "Not Available", newestFramePerfStats.AswActivatedToggleCount,
-                    newestFramePerfStats.AswPresentedFrameCount, newestFramePerfStats.AswFailedFrameCount,
                     perfStats.FrameStatsCount, ovrMaxProvidedFrameStats, perfStats.AnyFrameStatsDropped ? "Yes" : "No",
                     perfStats.AdaptiveGpuPerformanceScale * 100.0f, non10GpuPerfScale);
             }
@@ -4235,19 +3747,16 @@ Recti OculusWorldDemoApp::RenderTextInfoHud(float textHeight)
                 snprintf(buf, sizeof(buf),
                     " SDK Performance Stats\n\n"
                     " HMD Frame #:\t400 N/A\n"
-                    " App Frame #:\t400 N/A\t650 App Dropped Count:\t1200 N/A\t1650\n"
-                    " Comp Frame #:\t400 N/A\t650 Comp Dropped Count:\t1200 N/A\t1650\n\n"
-                    " App Latency (ms):\t550 N/A\t770 Comp Latency (ms):\t1310 N/A\t1650\n"
-                    " App GPU Time (ms):\t550 N/A\t770 App CPU Time (ms):\t1310 N/A\t1650\n"
+                    " App Frame #:\t400 N/A\t650 App Dropped Count:\t1200 N/A\n"
+                    " Comp Frame #:\t400 N/A\t650 Comp Dropped Count:\t1200 N/A\n\n"
+                    " App Latency (ms):\t550 N/A\t770 Comp Latency (ms):\t1310 N/A\n"
+                    " App GPU Time (ms):\t550 N/A\t770 App CPU Time (ms):\t1310 N/A\n"
                     " App Q-Ahead (ms):\t580 N/A\n"
-					" Comp GPU Time (ms):\t550 N/A\t770 Comp CPU Time (ms):\t1310 N/A\n"
+					" Comp CPU Time (ms):\t550 N/A\t770 Comp CPU Time (ms):\t1310 N/A\n"
                     " Comp CPU-to-GPU Time (ms):\t750 N/A\n\n"
-                    " ASW Status:\t330 %s - N/A\t770 ASW Toggles: N/A\n"
-                    " ASW Present Count:\t550 N/A\t770 ASW Fail Count: N/A\n\n"
                     " Perf Frame Count: %d / %d\t770 Dropped Stats: N/A\n\n"
                     " Current GPU Perf: %4.2f%% \t770 Latched GPU Perf: %4.2f%%\n\n"
                     " < Press KeyPad \'/\' to reset stats >",
-                    perfStats.AswIsAvailable ? "Available" : "Not Available",
                     perfStats.FrameStatsCount, ovrMaxProvidedFrameStats, perfStats.AdaptiveGpuPerformanceScale * 100.0f, non10GpuPerfScale);
             }
             bounds = DrawTextBox(pRender, centerX, centerY, textHeight, buf, DrawText_Center);
@@ -4356,19 +3865,6 @@ Recti OculusWorldDemoApp::RenderControllerStateHud(float cx, float cy, float tex
     }
     else
     {
-        if (TextScreen == Text_ActiveControllerState)
-        {
-            s += "Controller Type: [ ";
-            if (controllerType & ovrControllerType_XBox)
-                s += "XBox ";
-            if (controllerType & ovrControllerType_Remote)
-                s += "Remote ";
-            if (controllerType & ovrControllerType_LTouch)
-                s += "LTouch ";
-            if (controllerType & ovrControllerType_RTouch)
-                s += "RTouch ";
-            s += "] \n";
-        }
         s += "Buttons: [";
     if (is.Buttons & ovrButton_A)           s += "A ";
     if (is.Buttons & ovrButton_B)           s += "B ";
@@ -4472,19 +3968,6 @@ Recti OculusWorldDemoApp::RenderControllerStateHud(float cx, float cy, float tex
                 is.IndexTrigger[ovrHand_Left], is.HandTrigger[ovrHand_Left],
                 is.Thumbstick[ovrHand_Left].x, is.Thumbstick[ovrHand_Left].y);
             s += strBuffer;
-
-            snprintf(strBuffer, sizeof(strBuffer), "Left Touch Raw:  T:%0.3f M:%0.3f   X:%0.3f,Y:%0.3f\n",
-                is.IndexTriggerRaw[ovrHand_Left], is.HandTriggerRaw[ovrHand_Left],
-                is.ThumbstickRaw[ovrHand_Left].x, is.ThumbstickRaw[ovrHand_Left].y);
-            s += strBuffer;
-
-            snprintf(strBuffer, sizeof(strBuffer), "Left Touch Position:  X:%0.3f Y:%0.3f Z:%0.3f\n",
-                HandPoses[ovrHand_Left].Position.x, HandPoses[ovrHand_Left].Position.y, HandPoses[ovrHand_Left].Position.z );
-            s += strBuffer;
-
-            snprintf(strBuffer, sizeof(strBuffer), "Left Touch Orientation:  X:%0.3f Y:%0.3f Z:%0.3f W:%.03f\n",
-                HandPoses[ovrHand_Left].Orientation.x, HandPoses[ovrHand_Left].Orientation.y, HandPoses[ovrHand_Left].Orientation.z, HandPoses[ovrHand_Left].Orientation.w);
-            s += strBuffer;
         }
         else
         {
@@ -4493,22 +3976,9 @@ Recti OculusWorldDemoApp::RenderControllerStateHud(float cx, float cy, float tex
 
         if (ConnectedControllerTypes & ovrControllerType_RTouch)
         {
-            snprintf(strBuffer, sizeof(strBuffer), "Right Touch: T:%0.3f M:%0.3f   X:%0.3f,Y:%0.3f\n",
+            snprintf(strBuffer, sizeof(strBuffer), "Right Touch: T:%0.3f M:%0.3f   X:%0.3f,Y:%0.3f",
                 is.IndexTrigger[ovrHand_Right], is.HandTrigger[ovrHand_Right],
                 is.Thumbstick[ovrHand_Right].x, is.Thumbstick[ovrHand_Right].y);
-            s += strBuffer;
-
-            snprintf(strBuffer, sizeof(strBuffer), "Right Touch Raw: T:%0.3f M:%0.3f   X:%0.3f,Y:%0.3f\n",
-                is.IndexTriggerRaw[ovrHand_Right], is.HandTriggerRaw[ovrHand_Right],
-                is.ThumbstickRaw[ovrHand_Right].x, is.ThumbstickRaw[ovrHand_Right].y);
-            s += strBuffer;
-
-            snprintf(strBuffer, sizeof(strBuffer), "Right Touch Position:  X:%0.3f Y:%0.3f Z:%0.3f\n",
-                HandPoses[ovrHand_Right].Position.x, HandPoses[ovrHand_Right].Position.y, HandPoses[ovrHand_Right].Position.z);
-            s += strBuffer;
-
-            snprintf(strBuffer, sizeof(strBuffer), "Right Touch Orientation:  X:%0.3f Y:%0.3f Z:%0.3f W:%.03f\n",
-                HandPoses[ovrHand_Right].Orientation.x, HandPoses[ovrHand_Right].Orientation.y, HandPoses[ovrHand_Right].Orientation.z, HandPoses[ovrHand_Right].Orientation.w);
             s += strBuffer;
         }
         else
@@ -4519,7 +3989,7 @@ Recti OculusWorldDemoApp::RenderControllerStateHud(float cx, float cy, float tex
 
     // Haptics
     snprintf(strBuffer, sizeof(strBuffer), "\n\nHaptics Mode: %d/%d (Press X change)\n%s",
-        HapticsMode, kMaxHapticsModes-1, HapticsModeDesc[HapticsMode]);
+        HapticsMode, kMaxHapticsModes, HapticsModeDesc[HapticsMode]);
     s += strBuffer;
 
     }
@@ -4542,9 +4012,10 @@ void OculusWorldDemoApp::HmdSettingChangeFreeRTs(OptionVar*)
     {
         RenderTargets[rtNum].pColorTex = NULL;
         RenderTargets[rtNum].pDepthTex = NULL;
+        MsaaRenderTargets[rtNum].pColorTex = NULL;
+        MsaaRenderTargets[rtNum].pDepthTex = NULL;
     }
 }
-
 
 void OculusWorldDemoApp::RendertargetResolutionModeChange(OptionVar*)
 {
@@ -4581,45 +4052,6 @@ void OculusWorldDemoApp::ForceAssetReloading(OptionVar* opt)
     LoadingState = LoadingState_DoLoad;
 
     HmdSettingChangeFreeRTs(opt);
-}
-
-uint64_t OculusWorldDemoApp::ConvertMirrorOptionsToMirrorFormatFlags()
-{
-    uint64_t format = 0;
-
-    if (CurrentMirrorOptionStage == MirrorOptionStage_PostDistortion)
-    {
-        format |= Texture_MirrorPostDistortion;
-    }
-    switch (CurrentMirrorOptionEyes)
-    {
-    case OculusWorldDemoApp::MirrorOptionEyes_Both:         break;
-    case OculusWorldDemoApp::MirrorOptionEyes_LeftOnly:     format |= Texture_MirrorLeftEyeOnly;    break;
-    case OculusWorldDemoApp::MirrorOptionEyes_RightOnly:    format |= Texture_MirrorRightEyeOnly;   break;
-    default: OVR_FAIL();    break;
-    }
-
-    if (CurrentMirrorOptionCaptureGuardian)
-    {
-        format |= Texture_MirrorIncludeGuardian;
-    }
-    if (CurrentMirrorOptionCaptureNotifications)
-    {
-        format |= Texture_MirrorIncludeNotifications;
-    }
-    if (CurrentMirrorOptionCaptureSystemGui)
-    {
-        format |= Texture_MirrorIncludeSystemGui;
-    }
-
-    return format;
-}
-
-void OculusWorldDemoApp::MirrorSettingChange(OptionVar*)
-{
-    CurrentMirrorOptionsFormat = ConvertMirrorOptionsToMirrorFormatFlags();
-    MirrorOptionsChanged = true;
-    HmdSettingsChanged = true; NotificationTimeout = ovr_GetTimeInSeconds() + 10.0f;
 }
 
 void OculusWorldDemoApp::DebugHudSettingQuadPropChange(OptionVar*)
@@ -4728,31 +4160,6 @@ void OculusWorldDemoApp::ResetHmdPose(OptionVar* /* = 0 */)
 {
     ovr_RecenterTrackingOrigin(Session);
     Menu.SetPopupMessage("Sensor Fusion Recenter Tracking Origin");
-
-    if (IsMixedRealityCaptureMode)
-    {
-        // Handle the special use case : reset tracking center for static external camera
-        if (ExternalCameras[CurrentCameraID].Extrinsics.AttachedToDevice == ovrTrackedDevice_None)
-        {
-            NumberOfCameras = MaxNumberOfCameras;
-            ovrResult error = ovr_GetExternalCameras(Session, &ExternalCameras[0], &NumberOfCameras);   // Here the 2nd parameter is the actual size of camera array
-            if (!OVR_SUCCESS(error))
-            {
-                DisplayLastErrorMessageBox("ovr_GetExternalCameras failure.");
-            }
-        }
-    }
-}
-
-void OculusWorldDemoApp::SpecifyTrackingOrigin(OptionVar* /* = 0 */)
-{
-    Posef originPose;
-    originPose.Translation.x = ProvidedTrackingOriginTranslationYaw.x;
-    originPose.Translation.y = ProvidedTrackingOriginTranslationYaw.y;
-    originPose.Translation.z = ProvidedTrackingOriginTranslationYaw.z;
-    originPose.Rotation = Quatf(Vector3f(0.0f, 1.0f, 0.0f), DegreeToRad(ProvidedTrackingOriginTranslationYaw.w));
-
-    ovr_SpecifyTrackingOrigin(Session, originPose);
 }
 
 
@@ -4765,19 +4172,6 @@ void OculusWorldDemoApp::TestUpdateFirmware(OptionVar*)
 {
     ovr_SetBool(nullptr, "TestFirmwareUpdate", ovrTrue);
     Menu.SetPopupMessage("Testing Firmware Update");
-}
-
-unsigned int OculusWorldDemoApp::createProjectionModifier()
-{
-    bool flipZ = DepthModifier != NearLessThanFar;
-    bool farAtInfinity = DepthModifier == FarLessThanNearAndInfiniteFarClip;
-
-    unsigned int projectionModifier = ovrProjection_None;
-    projectionModifier |= (RenderParams.RenderAPI == RenderAPI_OpenGL) ? ovrProjection_ClipRangeOpenGL : 0;
-    projectionModifier |= flipZ ? ovrProjection_FarLessThanNear : 0;
-    projectionModifier |= farAtInfinity ? ovrProjection_FarClipAtInfinity : 0;
-
-    return projectionModifier;
 }
 
 //-----------------------------------------------------------------------------
@@ -4875,7 +4269,6 @@ void OculusWorldDemoApp::UpdateActiveControllerState()
 
     LastControllerState = ActiveControllerState;
 }
-
 
 
 

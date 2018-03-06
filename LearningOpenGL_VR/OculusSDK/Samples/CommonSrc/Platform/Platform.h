@@ -187,8 +187,6 @@ public:
     { OVR_UNUSED4(key, chr, down, modifiers); }
     virtual void OnMouseMove(int x, int y, int modifiers)
     { OVR_UNUSED3(x, y, modifiers); }
-    virtual void OnWindowProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
-    { OVR_UNUSED4(hwnd, msg, wp, lp); }
 
     virtual void OnResize(int width, int height)
     { OVR_UNUSED2(width, height); }

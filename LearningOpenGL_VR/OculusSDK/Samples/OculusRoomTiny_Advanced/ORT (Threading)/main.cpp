@@ -266,7 +266,7 @@ ThreadTest(GetRenderDesc)
     ovrEyeType eye = randeye(state->rand) ? ovrEye_Left : ovrEye_Right;
     ovrFovPort fov = {1, 1, 1, 1};
     ovrEyeRenderDesc renderDesc = ovr_GetRenderDesc(state->session, eye, fov);
-    return (renderDesc.HmdToEyePose.Position.x != 0) ? 0 : 1;
+    return (renderDesc.HmdToEyeOffset.x != 0) ? 0 : 1;
 }
 
 // XXX add SwapTextureSet test

@@ -1021,7 +1021,7 @@ namespace OVR { namespace Render {
         }
     }
 
-    int GetTextureSize(uint64_t format, int w, int h)
+    int GetTextureSize(int format, int w, int h)
     {
         switch (format & Texture_TypeMask)
         {

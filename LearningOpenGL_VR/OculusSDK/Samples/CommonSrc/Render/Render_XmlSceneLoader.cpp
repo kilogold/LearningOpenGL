@@ -46,9 +46,7 @@ bool XmlHandler::ReadFile(const char* fileName, OVR::Render::RenderDevice* pRend
                           std::vector<Ptr<CollisionModel> >* pCollisions,
                           std::vector<Ptr<CollisionModel> >* pGroundCollisions,
                           bool srgbAware /*= false*/,
-                          bool anisotropic /*= false*/,
-                          OVR::Render::BuiltinGeometryShaders geomShader /*= GShader_Disabled*/,
-                          bool heavyAluAndEarlyZ /*= false*/)
+                          bool anisotropic /*= false*/)
 {
     if(pXmlDocument->LoadFile(fileName) != 0)
     {
@@ -214,23 +212,12 @@ bool XmlHandler::ReadFile(const char* fileName, OVR::Render::RenderDevice* pRend
         //set up the shader
         Ptr<ShaderFill> shader = *new ShaderFill(*pRender->CreateShaderSet());
         shader->GetShaders()->SetShader(pRender->LoadBuiltinShader(Shader_Vertex, VShader_MVP));
-        if (geomShader != GShader_Disabled)
-        {
-            shader->GetShaders()->SetShader(pRender->LoadBuiltinShader(Shader_Geometry, geomShader));
-        }
         if(diffuseTextureIndex > -1)
         {
             shader->SetTexture(0, Textures[diffuseTextureIndex]);
             if(lightmapTextureIndex > -1)
             {
-                if (!heavyAluAndEarlyZ)
-                {
-                    shader->GetShaders()->SetShader(pRender->LoadBuiltinShader(Shader_Fragment, FShader_MultiTexture));
-                }
-                else
-                {
-                    shader->GetShaders()->SetShader(pRender->LoadBuiltinShader(Shader_Fragment, FShader_MultiTextureHeavyAluEarlyZ));
-                }
+                shader->GetShaders()->SetShader(pRender->LoadBuiltinShader(Shader_Fragment, FShader_MultiTexture));
                 shader->SetTexture(1, Textures[lightmapTextureIndex]);
             }
             else

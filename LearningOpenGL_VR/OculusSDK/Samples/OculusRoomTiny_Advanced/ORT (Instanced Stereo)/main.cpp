@@ -190,7 +190,7 @@ static bool MainLoop(bool retryCreate)
     desc.Format = OVR_FORMAT_R8G8B8A8_UNORM_SRGB;
     desc.Width = DIRECTX.WinSizeW;
     desc.Height = DIRECTX.WinSizeH;
-    result = ovr_CreateMirrorTextureWithOptionsDX(session, DIRECTX.Device, &desc, &mirrorTexture);
+    result = ovr_CreateMirrorTextureDX(session, DIRECTX.Device, &desc, &mirrorTexture);
     if (!OVR_SUCCESS(result))
     {
         if (retryCreate) goto Done;
@@ -237,11 +237,12 @@ static bool MainLoop(bool retryCreate)
         roomScene->Models[0]->Pos = XMFLOAT3(9 * sin(cubeClock), 3, 9 * cos(cubeClock += 0.015f));
 
         // Get both eye poses simultaneously, with IPD offset already included. 
-        ovrPosef EyeRenderPose[2];
-        ovrPosef HmdToEyePose[2] = { eyeRenderDesc[0].HmdToEyePose, eyeRenderDesc[1].HmdToEyePose};
+        ovrPosef         EyeRenderPose[2];
+        ovrVector3f      HmdToEyeOffset[2] = { eyeRenderDesc[0].HmdToEyeOffset,
+                                               eyeRenderDesc[1].HmdToEyeOffset };
 
         double sensorSampleTime;    // sensorSampleTime is fed into the layer later
-        ovr_GetEyePoses(session, frameIndex, ovrTrue, HmdToEyePose, EyeRenderPose, &sensorSampleTime);
+        ovr_GetEyePoses(session, frameIndex, ovrTrue, HmdToEyeOffset, EyeRenderPose, &sensorSampleTime);
 
         // Render scene to eye texture
         if (isVisible)

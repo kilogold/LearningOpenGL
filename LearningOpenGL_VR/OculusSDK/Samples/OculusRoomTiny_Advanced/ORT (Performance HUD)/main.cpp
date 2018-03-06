@@ -23,8 +23,7 @@ limitations under the License.
 /// Press '2' to see latency timing.
 /// Press '3' to see application render timing.
 /// Press '4' to see compositor render timing.
-/// Press '5' to see async spacewarp stats.
-/// Press '6' to see version info.
+/// Press '5' to see version info.
 
 #include "OVR_Version.h"
 
@@ -128,25 +127,6 @@ limitations under the License.
 ///     Left-side graph:    Plots "Compositor GPU Time"
 ///     Right-side graph:   Plots "Comp Gpu-End to Present"
 ///
-/// Async SpaceWarp Stats :
-///
-///     ASW Status
-///         Shows the availability and current status of ASW. "Not Available" can be due to the OS and/or GPU type
-///         used on the PC. "Available - Not Active" will mean the application is successfully maintaining the 
-///         required native refresh rate, so ASW is not activated.
-///
-///     ASW Active-Toggle Count
-///         Tracks the number of times ASW has been activated.
-///
-///     ASW Presented-Frame Count
-///         Tracks the number of frames extrapolated by ASW that were displayed. When ASW is active, since the app
-///         is forced to run at half-rate, expect this value to increase by 45 fps on a 90 Hz refresh rate HMD.
-///
-///     ASW Failed-Frame Count
-///         Tracks the number of extrapolated frames ASW needed to display, but failed to prepare the frames in time.
-///         This can happen for a multitude of reasons ranging from resource contention on the OS, to exceeding
-///         the capabilities of the system. 
-///     
 ///Version Info :
 ///     
 ///     OVR SDK Runtime Ver
@@ -177,8 +157,7 @@ struct PerformanceHUD : BasicVR
             if (DIRECTX.Key['2']) ovr_SetInt(Session, OVR_PERF_HUD_MODE, (int)ovrPerfHud_LatencyTiming);
             if (DIRECTX.Key['3']) ovr_SetInt(Session, OVR_PERF_HUD_MODE, (int)ovrPerfHud_AppRenderTiming);
             if (DIRECTX.Key['4']) ovr_SetInt(Session, OVR_PERF_HUD_MODE, (int)ovrPerfHud_CompRenderTiming);
-            if (DIRECTX.Key['5']) ovr_SetInt(Session, OVR_PERF_HUD_MODE, (int)ovrPerfHud_AswStats);
-            if (DIRECTX.Key['6']) ovr_SetInt(Session, OVR_PERF_HUD_MODE, (int)ovrPerfHud_VersionInfo);
+            if (DIRECTX.Key['5']) ovr_SetInt(Session, OVR_PERF_HUD_MODE, (int)ovrPerfHud_VersionInfo);
 
 		    ActionFromInput();
 		    Layer[0]->GetEyePoses();

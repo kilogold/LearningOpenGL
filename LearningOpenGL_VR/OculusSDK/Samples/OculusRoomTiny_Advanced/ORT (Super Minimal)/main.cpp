@@ -68,9 +68,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int)
 	for (long long frameIndex = 0; frameIndex < 1000;)
 	{
 		// Get pose using a default IPD
-        ovrPosef HmdToEyePose[2] = {{{0,0,0,1}, {-0.032f, 0, 0}},
-                                    {{0,0,0,1}, {+0.032f, 0, 0}}};
-        ovrPosef pose[2]; ovr_GetEyePoses(session, frameIndex, ovrTrue, HmdToEyePose, pose, &ld.SensorSampleTime);
+		ovrVector3f HmdToEyeOffset[2] = { { -0.032f, 0, 0 }, { +0.032f, 0, 0 }, };
+        ovrPosef pose[2]; ovr_GetEyePoses(session, frameIndex, ovrTrue, HmdToEyeOffset, pose, &ld.SensorSampleTime);
 		for (int i = 0; i < 2; i++) ld.RenderPose[i] = pose[i];
 
 		// Render to each eye

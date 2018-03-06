@@ -34,7 +34,6 @@ limitations under the License.
 #include <vector>
 #include <string>
 
-
 namespace OVR { namespace Render { namespace D3D11 {
 
 class RenderDevice;
@@ -155,9 +154,9 @@ public:
     mutable Ptr<ID3D11SamplerState>               Sampler;
     int                                           Width, Height;
     int                                           Samples;
-    uint64_t                                      Format;
+    int                                           Format;
 
-    Texture(ovrSession session, RenderDevice* r, uint64_t fmt, int w, int h);
+    Texture(ovrSession session, RenderDevice* r, int fmt, int w, int h);
     ~Texture();
 
     Ptr<ID3D11Texture2D>        GetTex() const
@@ -209,7 +208,7 @@ public:
     virtual int GetWidth() const override { return Width; }
     virtual int GetHeight() const override { return Height; }
     virtual int GetSamples() const override { return Samples; }
-    virtual uint64_t GetFormat() const override { return Format; }
+    virtual int GetFormat() const override { return Format; }
 
     virtual void SetSampleMode(int sm) override;
 
@@ -220,8 +219,6 @@ public:
     virtual void GenerateMips() override;
     // Used to commit changes to the texture swap chain
     virtual void Commit() override;
-
-    virtual void Update(void* data, uint32_t height, uint32_t stride) override;
 };
 
 
@@ -246,9 +243,6 @@ public:
     Ptr<ID3D11RasterizerState>      RasterizerCullOff;
     Ptr<ID3D11RasterizerState>      RasterizerCullBack;
     Ptr<ID3D11RasterizerState>      RasterizerCullFront;
-    Ptr<ID3D11RasterizerState>      RasterizerCullOffScissorEnabled;
-    Ptr<ID3D11RasterizerState>      RasterizerCullBackScissorEnabled;
-    Ptr<ID3D11RasterizerState>      RasterizerCullFrontScissorEnabled;
 	Ptr<ID3D11BlendState>           BlendStatePreMulAlpha; 
 	Ptr<ID3D11BlendState>           BlendStateNormalAlpha; 
 	D3D11_VIEWPORT                  D3DViewport;
@@ -271,7 +265,6 @@ public:
     int                            MaxTextureSet[Shader_Count];
 
     Ptr<VertexShader>              VertexShaders[VShader_Count];
-    Ptr<GeomShader>                GeometryShaders[GShader_Count];
     Ptr<PixelShader>               PixelShaders[FShader_Count];
     Ptr<GeomShader>                pStereoShaders[Prim_Count];
     Ptr<Buffer>                    CommonUniforms[8];
@@ -288,9 +281,6 @@ public:
     Ptr<D3DUtil::Blitter>          Blitter;
 
     Ptr<ID3DUserDefinedAnnotation> UserAnnotation;  // for GPU profile markers
-
-    bool                           ScissorEnabled = false;
-    CullMode                       ActiveCullMode = Cull_Back;
 
 public:
     RenderDevice(ovrSession session, const RendererParams& p, HWND window, ovrGraphicsLuid luid);
@@ -312,35 +302,31 @@ public:
 
     virtual void Clear(float r = 0, float g = 0, float b = 0, float a = 1,
         float depth = 1,
-        bool clearColor = true, bool clearDepth = true, int faceIndex = -1) override;
+        bool clearColor = true, bool clearDepth = true) override;
 
     virtual Buffer* CreateBuffer() override;
-    virtual Texture* CreateTexture(uint64_t format, int width, int height, const void* data, int mipcount = 1, ovrResult* error = nullptr) override;
+    virtual Texture* CreateTexture(int format, int width, int height, const void* data, int mipcount = 1, ovrResult* error = nullptr) override;
 
-    static std::tuple<unsigned int, const void*> GenerateSubresourceData(
+    static void GenerateSubresourceData(
         unsigned imageWidth, unsigned imageHeight, int format, unsigned imageDimUpperLimit,
         const void* rawBytes,
         D3D11_SUBRESOURCE_DATA* subresData,
-        unsigned& largestMipWidth, unsigned& largestMipHeight, unsigned& byteSize, unsigned& effectiveMipCount, unsigned subresDataIndex);
+        unsigned& largestMipWidth, unsigned& largestMipHeight, unsigned& byteSize, unsigned& effectiveMipCount);
 
-    virtual Texture* GetDepthBuffer(int w, int h, int ms, TextureFormat depthFormat = Texture_Depth32f) override;
-
+    Texture* GetDepthBuffer(int w, int h, int ms, TextureFormat depthFormat);
+    
     virtual void ResolveMsaa(Render::Texture* msaaTex, Render::Texture* outputTex) override;
 
     virtual void SetCullMode(CullMode cullMode) override;
-    virtual void EnableScissor(bool enabled) override;
 
     virtual void BeginRendering() override;
     virtual void SetRenderTarget(Render::Texture* color,
-        Render::Texture* depth = NULL, Render::Texture* stencil = NULL, int faceIndex = -1) override;
+        Render::Texture* depth = NULL, Render::Texture* stencil = NULL) override;
     virtual void SetDepthMode(bool enable, bool write, CompareFunc func = Compare_Less) override;
     virtual void SetWorldUniforms(const Matrix4f& proj, const Vector4f& globalTint) override;
     virtual void SetCommonUniformBuffer(int i, Render::Buffer* buffer) override;
 
     virtual void Blt(Render::Texture* texture) override;
-    virtual void Blt(Render::Texture* texture, uint32_t topLeftX, uint32_t topLeftY, uint32_t width, uint32_t height) override;
-    virtual void BltToTex(Render::Texture* src, Render::Texture* dest) override;
-    virtual void BltFlipCubemap(Render::Texture* src, Render::Texture* temp) override;
 
     // Overridden to apply proper blend state.
     virtual void FillRect(float left, float top, float right, float bottom, Color c, const Matrix4f* view = NULL) override;
@@ -364,12 +350,10 @@ public:
     ID3D11SamplerState* GetSamplerState(int sm);
 
     void SetTexture(Render::ShaderStage stage, int slot, const Texture* t);
-    bool SaveCubemapTexture(Render::Texture* tex, Vector3f transl, const std::string& filePath, std::string* error) override;
 
     // GPU Profiling
     virtual void BeginGpuEvent(const char* markerText, uint32_t markerColor) override;
     virtual void EndGpuEvent() override;
-
 };
 
 
