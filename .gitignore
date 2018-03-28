@@ -1,9 +1,9 @@
-OpenGL.VC.db
-OpenGL.VC.VC.opendb
+LearningOpenGL_VR.VC.db
+LearningOpenGL_VR.VC.VC.opendb
 Debug
-OpenGL/Debug
-OpenGL/glfw-3.2.1.bin.WIN32/docs
-OpenGL/glfw-3.2.1.bin.WIN64/docs
+LearningOpenGL_VR/Debug
+LearningOpenGL_VR/glfw-3.2.1.bin.WIN32/docs
+LearningOpenGL_VR/glfw-3.2.1.bin.WIN64/docs
 .vs
-OpenGL/OculusSDK/Samples/
-OpenGL/OculusSDK/Tools/
+LearningOpenGL_VR/OculusSDK/Samples/
+LearningOpenGL_VR/OculusSDK/Tools/
