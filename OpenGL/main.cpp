@@ -76,8 +76,8 @@ int main()
 
     // build and compile our shader zprogram
     // ------------------------------------
-    Shader lightingShader("Assets\\Shaders\\1.colors.vs", "Assets\\Shaders\\1.colors.fs");
-    Shader lampShader("Assets\\Shaders\\1.lamp.vs", "Assets\\Shaders\\1.lamp.fs");
+    Shader lightingShader("Assets\\Shaders\\1.colors.vp", "Assets\\Shaders\\1.colors.fp");
+    Shader lampShader("Assets\\Shaders\\1.lamp.vp", "Assets\\Shaders\\1.lamp.fp");
 
     // set up vertex data (and buffer(s)) and configure vertex attributes
     // ------------------------------------------------------------------
@@ -177,9 +177,14 @@ int main()
         lightingShader.use();
         lightingShader.setVec3("objectColor", 1.0f, 0.5f, 0.31f);
         lightingShader.setVec3("lightColor", 1.0f, 1.0f, 1.0f);
+        lightingShader.setVec3("material.ambient", 1.0f, 0.5f, 0.31f);
+        lightingShader.setVec3("material.diffuse", 1.0f, 0.5f, 0.31f);
+        lightingShader.setVec3("material.specular", 0.5f, 0.5f, 0.5f);
+        lightingShader.setFloat("material.shininess", 32.0f);
         lightPos.x = cos(currentFrame);
         lightPos.z = sin(currentFrame);
         lightingShader.setVec3("lightPos", lightPos);
+        lightingShader.setVec3("viewPos", camera.Position);
 
         // view/projection transformations
         glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);

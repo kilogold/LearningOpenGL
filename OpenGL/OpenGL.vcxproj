@@ -29,10 +29,10 @@
     <ClInclude Include="stb\stb_image.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Assets\Shaders\1.colors.fs" />
-    <None Include="Assets\Shaders\1.colors.vs" />
-    <None Include="Assets\Shaders\1.lamp.fs" />
-    <None Include="Assets\Shaders\1.lamp.vs" />
+    <None Include="Assets\Shaders\1.colors.fp" />
+    <None Include="Assets\Shaders\1.colors.vp" />
+    <None Include="Assets\Shaders\1.lamp.fp" />
+    <None Include="Assets\Shaders\1.lamp.vp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{47E91669-FCD7-45F7-B90C-6A76463C6529}</ProjectGuid>
@@ -94,7 +94,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <IncludePath>$(ProjectDir)glfw-3.2.1.bin.WIN32\include;$(ProjectDir)glad\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Users\KELVIN\Desktop\LearningOpenGL\OpenGL\glfw-3.2.1.bin.WIN32\lib-vc2015;$(LibraryPath)</LibraryPath>
+    <LibraryPath>$(ProjectDir)glfw-3.2.1.bin.WIN32\lib-vc2015;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>

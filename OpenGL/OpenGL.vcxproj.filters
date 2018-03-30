@@ -37,16 +37,16 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="Assets\Shaders\1.colors.vs">
+    <None Include="Assets\Shaders\1.colors.vp">
       <Filter>Resource Files</Filter>
     </None>
-    <None Include="Assets\Shaders\1.colors.fs">
+    <None Include="Assets\Shaders\1.colors.fp">
       <Filter>Resource Files</Filter>
     </None>
-    <None Include="Assets\Shaders\1.lamp.fs">
+    <None Include="Assets\Shaders\1.lamp.fp">
       <Filter>Resource Files</Filter>
     </None>
-    <None Include="Assets\Shaders\1.lamp.vs">
+    <None Include="Assets\Shaders\1.lamp.vp">
       <Filter>Resource Files</Filter>
     </None>
   </ItemGroup>
